@@ -1,5 +1,7 @@
 # HWP 단어 바꾸기 · 실험판
 
+웹사이트: **[https://sihoo7005.github.io/hwp/](https://sihoo7005.github.io/hwp/)**
+
 일반 HWP 5.0 파일을 열고, 같은 길이의 한글·영문·숫자 문자열을 모두 치환해 새 `.hwp`로 내려받는 작은 웹사이트입니다. 문서는 브라우저의 Web Worker에서 처리하며 외부 서버로 업로드하지 않습니다.
 
 ## 실행
@@ -45,9 +47,9 @@ GitHub 저장소의 **Settings → Pages → Source**는 **GitHub Actions**로 �
 
 Pages를 활성화한 뒤 **Settings → Secrets and variables → Actions → Variables**에서 `PAGES_ENABLED=true`를 설정합니다. **Actions → Test and deploy website → Run workflow**로 첫 배포를 시작할 수 있고, 이후 `main`에 푸시하면 자동 배포합니다.
 
-2026-10-04 현재 Pages 활성화 API는 이 비공개 저장소에 대해 “Your current plan does not support GitHub Pages for this repository”라고 응답했습니다. 저장소 공개 전환 또는 지원 요금제 사용을 결정하기 전까지 배포는 비활성 상태이며 테스트·빌드는 실행됩니다.
+2026-10-04 사용자 승인에 따라 저장소를 공개로 전환하고 Pages와 `PAGES_ENABLED=true`를 활성화했습니다. 이후 `main`에 푸시하면 검사·빌드 성공 후 자동 배포됩니다.
 
-배포 성공 후 기본 주소는 `https://sihoo7005.github.io/hwp/`입니다. GitHub Actions의 워크플로 실행 결과에서 실제 배포 상태를 확인하세요.
+사이트 주소는 `https://sihoo7005.github.io/hwp/`입니다. [GitHub Actions 실행 결과](https://github.com/sihoo7005/hwp/actions/workflows/pages.yml)에서 실제 배포 상태를 확인하세요.
 
 전체 개발 계획은 [HWP_WEB_PLAN.md](./HWP_WEB_PLAN.md)에 있습니다.
 
