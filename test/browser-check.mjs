@@ -8,16 +8,28 @@ const downloadDir=mkdtempSync(join(tmpdir(),'hwp-browser-download-'));
 const targets=await (await fetch('http://127.0.0.1:9222/json/list')).json();
 const ws=new WebSocket(targets.find(t=>t.type==='page').webSocketDebuggerUrl);
 await new Promise((resolve,reject)=>{ws.onopen=resolve;ws.onerror=reject});
-let sequence=0;const pending=new Map();const exceptions=[];
-ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(new Error(JSON.stringify(m.error))):p.resolve(m.result)}else if(m.method==='Runtime.exceptionThrown')exceptions.push(m.params.exceptionDetails);else if(m.method==='Page.javascriptDialogOpening')call('Page.handleJavaScriptDialog',{accept:true}).catch(()=>{})};
+let sequence=0,fileChoosers=0;const pending=new Map();const exceptions=[];
+ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(new Error(JSON.stringify(m.error))):p.resolve(m.result)}else if(m.method==='Runtime.exceptionThrown')exceptions.push(m.params.exceptionDetails);else if(m.method==='Page.javascriptDialogOpening')call('Page.handleJavaScriptDialog',{accept:true}).catch(()=>{});else if(m.method==='Page.fileChooserOpened')fileChoosers++};
 function call(method,params={}){return new Promise((resolve,reject)=>{const id=++sequence;pending.set(id,{resolve,reject});ws.send(JSON.stringify({id,method,params}));})}
 async function evalJS(expression){const r=await call('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw new Error(JSON.stringify(r.exceptionDetails));return r.result.value;}
 async function waitFor(expression){await evalJS(`new Promise((resolve,reject)=>{const end=Date.now()+10000;const poll=()=>{if(${expression})resolve(true);else if(Date.now()>end)reject(new Error('UI timeout'));else setTimeout(poll,100)};poll()})`)}
+async function clickSelector(selector){const point=await evalJS(`(()=>{const b=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/2}})()`);await call('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',clickCount:1});await call('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1});}
 await call('Runtime.enable');await call('Page.enable');
 await call('Emulation.setDeviceMetricsOverride',{width:1100,height:1100,deviceScaleFactor:1,mobile:false});
 await call('Page.navigate',{url:process.argv[2] || 'http://127.0.0.1:8765/'});
 await waitFor("document.querySelector('#file') && document.querySelector('#status') && document.readyState === 'complete'");
 await new Promise(resolve=>setTimeout(resolve,300));
+assert.ok(await evalJS("document.querySelector('.empty-document button[data-open-file]') !== null"));
+assert.equal(await evalJS("document.documentElement.scrollHeight <= window.innerHeight"),true,'app fills viewport without outer scrolling');
+await call('Page.setInterceptFileChooserDialog',{enabled:true});
+const chooserRoot=await call('DOM.getDocument');const chooserInput=await call('DOM.querySelector',{nodeId:chooserRoot.root.nodeId,selector:'#file'});
+await clickSelector('#open-file');await call('DOM.setFileInputFiles',{nodeId:chooserInput.nodeId,files:[]});
+await clickSelector('.empty-document [data-open-file]');await call('DOM.setFileInputFiles',{nodeId:chooserInput.nodeId,files:[]});
+await new Promise(r=>setTimeout(r,100));assert.equal(fileChoosers,2,'both open buttons launch the native file chooser');
+await call('Page.setInterceptFileChooserDialog',{enabled:false});
+await evalJS("document.querySelector('#help').click()");assert.equal(await evalJS("document.querySelector('#help-dialog').open"),true);
+await evalJS("document.querySelector('#help-dialog button[aria-label=\"안내 닫기\"]').click()");assert.equal(await evalJS("document.querySelector('#help-dialog').open"),false);
+const emptyShot=await call('Page.captureScreenshot',{format:'png'});writeFileSync(join(downloadDir,'empty.png'),Buffer.from(emptyShot.data,'base64'));
 
 const root=await call('DOM.getDocument');
 const {nodeId}=await call('DOM.querySelector',{nodeId:root.root.nodeId,selector:'#file'});
@@ -43,7 +55,14 @@ async function mode(value){await evalJS(`document.querySelector('#view-mode').va
 async function linePoint(index=0,offset=3){return await evalJS(`fetch(document.querySelector('.page-image').src).then(r=>r.text()).then(s=>{const svg=new DOMParser().parseFromString(s,'image/svg+xml');const lines=[...svg.querySelectorAll('text')].filter((t,i,a)=>a.findIndex(v=>Math.round(Number(v.getAttribute('y'))*10)===Math.round(Number(t.getAttribute('y'))*10))===i);const t=lines[${index}],image=document.querySelector('.page-image'),b=image.getBoundingClientRect(),scale=b.width/Number(image.dataset.width);return {x:b.left+(Number(t.getAttribute('x'))+${offset})*scale,y:b.top+(Number(t.getAttribute('y'))-5)*scale}})`)}
 async function clickLine(index=0){const point=await linePoint(index);await call('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',clickCount:1});await call('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1});await waitFor("document.activeElement.id === 'document-input'");return point}
 assert.match(await select(sampleDir+'plain.hwp'),/HWP · 1쪽/);await settled();
+assert.equal(await evalJS("document.querySelector('#document-title').textContent"),'plain.hwp');
+assert.ok(await evalJS("document.querySelector('#preview').clientHeight > window.innerHeight * .7"),'paper gets most of the viewport');
 assert.equal(await evalJS("document.querySelector('#view-mode').value"),'document');
+const droppedBytes=readFileSync(sampleDir+'plain.hwp').toString('base64');
+await evalJS(`{const dt=new DataTransfer();dt.items.add(new File([Uint8Array.from(atob(${JSON.stringify(droppedBytes)}),c=>c.charCodeAt(0))],'끌어놓기 테스트.hwp'));document.querySelector('#preview').dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:dt}));if(!document.querySelector('.workspace').classList.contains('file-drag'))throw new Error('No drop highlight');document.querySelector('#preview').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt}));}`);
+await settled();assert.equal(await evalJS("document.querySelector('#document-title').textContent"),'끌어놓기 테스트.hwp');
+assert.equal(await evalJS("document.querySelector('.workspace').classList.contains('file-drag')"),false);
+await select(sampleDir+'plain.hwp');await settled();
 assert.equal(await evalJS("document.querySelector('#text-editor')"),null,'no separate paragraph form');
 await clickLine();assert.equal(await evalJS("document.activeElement.dataset.paragraph"),'0');
 assert.ok(await evalJS("document.querySelector('.document-caret') !== null"));
@@ -153,6 +172,7 @@ await mode('document');assert.match(await svgText(),/서울은/);
 
 await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
 assert.equal(await evalJS('document.documentElement.scrollWidth <= window.innerWidth'),true);
+assert.equal(await evalJS('document.documentElement.scrollHeight <= window.innerHeight'),true);
 assert.ok(await evalJS("document.querySelector('.page-image').getBoundingClientRect().width <= document.querySelector('#preview').clientWidth"));
 await evalJS("document.querySelector('#zoom').value='1.5';document.querySelector('#zoom').dispatchEvent(new Event('change'))");assert.equal(await evalJS('document.documentElement.scrollWidth <= window.innerWidth'),true);
 assert.ok(await evalJS("document.querySelector('#preview').scrollWidth > document.querySelector('#preview').clientWidth"));

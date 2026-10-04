@@ -26,6 +26,7 @@ pageEditor.image.onerror = () => { if (preview.contains(pageEditor.image)) messa
 
 function message(text, error = false) {
   status.textContent = text;
+  status.title = text;
   status.dataset.error = String(error);
 }
 
@@ -54,6 +55,8 @@ function hasUnsaved() { return !!state?.dirty || drafts.size > 0 || composing.si
 function updateButtons() {
   const busy = actionBusy || !worker;
   preview.dataset.pending = String(drafts.size > 0 || composing.size > 0);
+  $(".document-heading").dataset.dirty = String(hasUnsaved());
+  $("#preview-state").hidden = !state;
   undo.disabled = busy || (!state?.canUndo && !drafts.size);
   redo.disabled = busy || !state?.canRedo || drafts.size > 0;
   save.disabled = busy || !state?.canEdit || !hasUnsaved();
@@ -65,8 +68,10 @@ function updateState(data, followCaret = true) {
   preview.dataset.revision = state.revision;
   pageEditor.sync(state.paragraphs, drafts);
   viewMode.disabled = false;
+  viewMode.querySelector('[value="document"]').textContent = state.canEdit ? "문서 편집" : "문서 보기";
   $("#preview-state").textContent = state.revision === 0 ? "원본" : state.dirty ? "수정 중" : "저장한 수정본";
   $("#viewer-status").textContent = `${state.format.toUpperCase()} · ${state.pages}쪽${state.warnings ? ` · 서식 검사 안내 ${state.warnings}건` : ''}${state.unsupported ? ` · 미지원 HML 요소 ${state.unsupported}건` : ''}${state.truncated ? ' · 전체 텍스트는 처음 20만 글자까지 표시' : ''}`;
+  $("#document-properties").textContent = `${$("#viewer-status").textContent} · ${state.canEdit ? "본문 편집 가능" : state.reason || "보기 전용"}`;
   updateButtons();
   renderView(followCaret);
 }
@@ -94,9 +99,11 @@ async function flushDrafts() {
 function releaseImage() { if (imageUrl) URL.revokeObjectURL(imageUrl); imageUrl = null; }
 function adjustZoom() {
   const image = preview.querySelector(".page-image");
-  if (!image) { $("#view-info").textContent = "텍스트 보기"; return; }
+  if (!image) { $("#view-info").textContent = state && viewMode.value === "text" ? "텍스트 보기" : ""; return; }
   const width = Number(image.dataset.width);
-  const scale = zoom.value === "fit" ? Math.min(1, Math.max(.05, (preview.clientWidth - 32) / width)) : Number(zoom.value);
+  const style = getComputedStyle(preview);
+  const available = preview.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  const scale = zoom.value === "fit" ? Math.min(1, Math.max(.05, available / width)) : Number(zoom.value);
   pageEditor.surface.style.zoom = scale;
   $("#view-info").textContent = `문서 ${state?.canEdit ? "편집" : "보기"} · ${Math.round(scale * 100)}%`;
 }
@@ -129,7 +136,8 @@ function updateNavigation() {
 function renderView(followCaret = false) {
   const token = ++pageRequest, epoch = generation;
   updateNavigation();
-  if (!state) { releaseImage(); preview.replaceChildren(); const p = document.createElement("p"); p.className = "empty"; p.textContent = "문서를 열면 여기에 표시됩니다."; preview.append(p); return; }
+  preview.dataset.empty = String(!state);
+  if (!state) { releaseImage(); preview.replaceChildren($("#empty-document").content.cloneNode(true)); $("#view-info").textContent = ""; return; }
   preview.dataset.mode = viewMode.value;
   if (viewMode.value === "text") {
     releaseImage();
@@ -152,8 +160,12 @@ async function loadFile(file, secret = "") {
   drafts.clear(); composing.clear(); pageEditor.reset();
   state = null; sourceBytes = null; pageCache = null; flushing = null; actionBusy = false;
   $("#viewer-status").textContent = "";
+  $("#document-properties").textContent = "";
   $("#preview-state").textContent = "원본";
   currentFile = file;
+  $("#document-title").textContent = file?.name || "문서를 열어 주세요";
+  $("#document-title").title = $("#document-title").textContent;
+  document.title = file ? `${file.name} · HWP 에디터` : "HWP 에디터";
   viewMode.disabled = true;
   viewMode.value = "document";
   pageNumber.value = 1;
@@ -198,10 +210,27 @@ async function loadFile(file, secret = "") {
   }
 }
 
-fileInput.addEventListener("change", () => {
-  const file = fileInput.files[0];
+function chooseFile(file) {
+  if (!file) return;
   if (hasUnsaved() && !window.confirm("저장하지 않은 변경이 있습니다. 변경을 버리고 다른 문서를 열까요?")) { fileInput.value = ""; return; }
+  fileInput.value = "";
   loadFile(file);
+}
+fileInput.addEventListener("change", () => chooseFile(fileInput.files[0]));
+document.addEventListener("click", event => {
+  if (event.target.closest("[data-open-file]")) fileInput.click();
+});
+$("#help").addEventListener("click", () => $("#help-dialog").showModal());
+window.addEventListener("dragover", event => {
+  if (!event.dataTransfer?.types.includes("Files")) return;
+  event.preventDefault(); event.dataTransfer.dropEffect = "copy";
+  $(".workspace").classList.add("file-drag");
+});
+window.addEventListener("dragleave", event => { if (!event.relatedTarget) $(".workspace").classList.remove("file-drag"); });
+window.addEventListener("drop", event => {
+  if (!event.dataTransfer?.types.includes("Files")) return;
+  event.preventDefault(); $(".workspace").classList.remove("file-drag");
+  chooseFile(event.dataTransfer.files[0]);
 });
 $("#password-form").addEventListener("submit", event => { event.preventDefault(); const secret = $("#password").value; $("#password").value = ""; if (currentFile && sourceBytes) loadFile(currentFile, secret); });
 viewMode.addEventListener("change", () => flushDrafts().then(() => renderView()).catch(e => message(e.message, true)));
@@ -244,3 +273,5 @@ document.addEventListener("keydown", event => {
   else if (event.key.toLowerCase() === "z" && (event.target === pageEditor.input || !event.target.matches("textarea,input"))) { event.preventDefault(); action(event.shiftKey ? "redo" : "undo"); }
 });
 window.addEventListener("beforeunload", event => { if (hasUnsaved()) { event.preventDefault(); event.returnValue = ""; } });
+updateButtons();
+renderView();

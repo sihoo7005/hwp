@@ -4,65 +4,86 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>HWP 텍스트 에디터 · 실험판</title>
+  <title>HWP 에디터</title>
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-  <main>
-    <header>
-      <p class="eyebrow">HWP 텍스트 에디터</p>
-      <h1>문서를 보면서 바로 수정하세요.</h1>
-      <p>원래 서식과 배치가 보이는 문서의 글자를 클릭해 입력·삭제하고, 수정한 문서를 새 파일로 저장하세요.<br>문서 내용과 비밀번호는 브라우저 안에서 처리합니다.</p>
-    </header>
-
-    <section class="card" aria-labelledby="open-title">
-      <h2 id="open-title"><span class="step">1</span> 한글 문서 열기</h2>
-      <label for="file">HWP · HWPX · HML/XML · 최대 32 MB</label>
-      <input id="file" type="file" accept=".hwp,.hwpx,.hml,.owpml,.xml">
-      <p id="file-info" class="muted">HWP 5.0·구형 HWP 3·배포용 문서와 HWPX를 볼 수 있습니다.</p>
-      <form id="password-form" hidden>
-        <label for="password">문서 비밀번호<input id="password" type="password" autocomplete="off" maxlength="256" required></label>
-        <button type="submit">비밀번호로 열기</button>
-        <p class="muted">비밀번호를 저장하거나 서버로 전송하지 않습니다.</p>
-      </form>
-    </section>
-
-    <section class="card" aria-labelledby="preview-title">
-      <div class="preview-heading"><h2 id="preview-title"><span class="step">2</span> 문서 편집</h2><span id="preview-state" class="muted">원본</span></div>
-      <div class="viewer-toolbar">
-        <label for="view-mode">보기<select id="view-mode" disabled><option value="document">문서 편집</option><option value="text">전체 텍스트</option></select></label>
-        <label for="zoom">확대<select id="zoom" disabled><option value="fit">너비 맞춤</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option></select></label>
-
-        <span id="view-info" class="muted" aria-live="polite"></span>
+  <main class="app-shell" aria-label="HWP 문서 에디터">
+    <header class="app-header">
+      <div class="brand" aria-label="HWP 에디터">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h6"/></svg></span>
+        <span class="brand-name">HWP <b>에디터</b></span>
       </div>
-      <div class="editor-toolbar actions">
-        <button id="undo" class="secondary" type="button" disabled>실행 취소</button>
-        <button id="redo" class="secondary" type="button" disabled>다시 실행</button>
-        <button id="save" type="button" disabled>수정한 파일 저장</button>
+      <div class="document-heading">
+        <h1 id="document-title" title="문서를 열어 주세요">문서를 열어 주세요</h1>
+        <span id="preview-state" class="state-badge">원본</span>
         <span id="edit-state" class="muted" aria-live="polite"></span>
       </div>
-      <p id="status" role="status" aria-live="polite">문서를 열면 본문을 직접 수정할 수 있습니다.</p>
-      <div id="page-navigation" class="page-navigation" hidden>
-        <button id="previous-page" class="secondary" type="button" disabled aria-label="이전 쪽">이전</button>
-        <label for="page-number">쪽<input id="page-number" type="number" value="1" min="1" max="1" inputmode="numeric" disabled></label>
-        <span id="page-total" class="muted"></span>
-        <button id="next-page" class="secondary" type="button" disabled aria-label="다음 쪽">다음</button>
+      <button id="help" class="icon-button" type="button" aria-label="사용 안내" title="사용 안내"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4M12 16h.01"/></svg></button>
+    </header>
+    <nav class="toolbar" aria-label="문서 도구">
+      <input id="file" type="file" accept=".hwp,.hwpx,.hml,.owpml,.xml" hidden>
+      <div class="tool-group file-tools">
+        <button id="open-file" class="tool-button" type="button" data-open-file title="문서 열기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5h6l2 2h10v3M3 7v13h16l3-10H7L3 20"/></svg><span>열기</span></button>
+        <button id="save" class="tool-button primary" type="button" disabled title="수정한 파일 저장 (Ctrl/Cmd+S)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 15v6h16v-6"/></svg><span>저장</span></button>
       </div>
-      <p id="viewer-status" class="muted" role="status" aria-live="polite"></p>
-      <div id="preview" class="preview" data-mode="document" tabindex="0" role="region" aria-label="문서 편집 및 보기"><p class="empty">문서를 열면 여기에 표시됩니다.</p></div>
-      <p class="muted">문서의 본문을 클릭하면 그 위치에 커서가 나타납니다. 입력·삭제·붙여넣기하면 문서의 배치가 갱신됩니다. 드래그로 같은 문단 안의 글자를 선택할 수 있습니다. Enter는 문단 안의 줄바꿈을 넣습니다. 표 셀·그림·수식·머리말 등의 편집은 아직 지원하지 않습니다.</p>
-      <p class="muted">문서에서는 그림·수식·도형·차트, 다단, 머리말·꼬리말·각주와 복잡한 표를 표시합니다. 설치되지 않은 글꼴은 대체되어 줄바꿈과 쪽 수가 달라질 수 있습니다. 일부 개체·구형 형식은 원본과 다르게 표시될 수 있습니다. 텍스트 보기에서는 글을 선택·복사할 수 있습니다.</p>
+      <div class="tool-group history-tools">
+        <button id="undo" class="icon-button" type="button" disabled aria-label="실행 취소" title="실행 취소 (Ctrl/Cmd+Z)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 4-5 5 5 5M3 9h11a7 7 0 0 1 0 14" transform="translate(0 -2)"/></svg></button>
+        <button id="redo" class="icon-button" type="button" disabled aria-label="다시 실행" title="다시 실행 (Ctrl/Cmd+Shift+Z)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 4 5 5-5 5M21 9H10a7 7 0 0 0 0 14" transform="translate(0 -2)"/></svg></button>
+      </div>
+      <div class="tool-group view-tools">
+        <label class="select-tool" for="view-mode"><span class="sr-only">보기</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6zM9 12h6M9 16h6"/></svg><select id="view-mode" disabled><option value="document">문서 편집</option><option value="text">전체 텍스트</option></select></label>
+        <label class="select-tool zoom-tool" for="zoom"><span class="sr-only">확대</span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6M7 10h6M10 7v6"/></svg><select id="zoom" disabled><option value="fit">너비 맞춤</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option></select></label>
+      </div>
+    </nav>
+    <section class="workspace" aria-label="문서 작업 영역">
+      <div id="preview" class="preview" data-mode="document" data-empty="true" tabindex="0" role="region" aria-label="문서 편집 및 보기"></div>
+      <div class="drop-overlay" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6"/></svg><strong>문서를 놓아 열기</strong></div>
+      <form id="password-form" class="password-panel" hidden>
+        <span class="panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0v4M12 14v3"/></svg></span>
+        <h2>암호로 보호된 문서</h2><p>비밀번호를 입력해 문서를 여세요.</p>
+        <label for="password" class="sr-only">문서 비밀번호</label>
+        <input id="password" type="password" autocomplete="off" maxlength="256" placeholder="비밀번호" required>
+        <button class="primary" type="submit">문서 열기</button>
+        <p class="muted">비밀번호는 저장하거나 서버로 전송하지 않습니다.</p>
+      </form>
     </section>
-
-    <aside class="notice">
-      <strong>저장 호환성을 확인하는 실험판입니다.</strong>
-      <p>텍스트 편집은 8 MB 이하의 일반 HWP 5.0·HWPX 본문에서 지원합니다. 표·그림 등의 개체가 있는 문단은 보호합니다. 실행 취소는 최근 10단계까지 지원하며, 원래 형식의 새 파일로 저장합니다. 편집한 범위의 글자 서식이 단순화될 수 있으므로 내려받은 파일은 한글 프로그램에서 직접 열어 확인하세요. DRM·일부 구형 암호 방식·손상 문서는 지원하지 않습니다. 원본 파일은 덮어쓰지 않습니다.</p>
-    </aside>
-    <footer>
-      <p>본 제품은 한컴의 HWP 문서 파일(.hwp) 공개 문서를 참고하여 개발하였습니다.</p>
-      <a href="./THIRD_PARTY_NOTICES.txt">외부 라이브러리 및 고지</a>
+    <footer class="statusbar" aria-label="문서 상태">
+      <div class="status-messages"><p id="status" role="status" aria-live="polite">문서를 열어 편집을 시작하세요.</p><span id="viewer-status" class="muted"></span></div>
+      <div id="page-navigation" class="page-navigation" hidden>
+        <button id="previous-page" class="icon-button" type="button" disabled aria-label="이전 쪽" title="이전 쪽"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg></button>
+        <label for="page-number"><span class="sr-only">쪽</span><input id="page-number" type="number" value="1" min="1" max="1" inputmode="numeric" disabled></label>
+        <span id="page-total" class="muted"></span>
+        <button id="next-page" class="icon-button" type="button" disabled aria-label="다음 쪽" title="다음 쪽"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg></button>
+      </div>
+      <span id="view-info" class="muted" aria-live="polite"></span>
     </footer>
   </main>
+  <template id="empty-document">
+    <div class="empty-document">
+      <span class="empty-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h4"/></svg></span>
+      <h2>문서를 열고, 바로 편집하세요.</h2><p>한글 문서를 여기에 놓거나<br>파일을 선택해 시작하세요.</p>
+      <button class="primary" type="button" data-open-file><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5h6l2 2h10v3M3 7v13h16l3-10H7L3 20"/></svg>문서 열기</button>
+      <span class="supported-types">HWP · HWPX · HML/XML <span>최대 32 MB</span></span>
+      <p class="privacy-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6zM8 12l3 3 5-6"/></svg>문서는 내 브라우저에서만 처리됩니다.</p>
+    </div>
+  </template>
+  <dialog id="help-dialog" aria-labelledby="help-title">
+    <div class="dialog-heading"><h2 id="help-title">사용 안내</h2><form method="dialog"><button class="icon-button" aria-label="안내 닫기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></form></div>
+    <div class="dialog-body">
+      <section class="document-details"><h3>현재 문서</h3><p id="file-info">열린 문서가 없습니다.</p><p id="document-properties" class="muted"></p></section>
+      <h3>문서 위에서 직접 편집</h3>
+      <p>본문 글자를 클릭하면 커서가 나타납니다. 입력·삭제·붙여넣기하면 문서의 배치가 갱신됩니다. 같은 문단 안에서 드래그로 글자를 선택할 수 있습니다. Enter는 문단 안의 줄바꿈을 넣습니다.</p>
+      <div class="shortcut-list"><span>파일 저장</span><kbd>Ctrl / ⌘ + S</kbd><span>실행 취소</span><kbd>Ctrl / ⌘ + Z</kbd><span>다시 실행</span><kbd>Ctrl / ⌘ + Shift + Z</kbd></div>
+      <h3>편집과 저장 범위</h3>
+      <p>텍스트 편집은 8 MB 이하의 일반 HWP 5.0·HWPX 본문에서 지원합니다. 실행 취소는 최근 10단계까지 지원합니다. 표 셀·그림·수식·머리말 등 개체와 문단 구조의 편집은 아직 지원하지 않습니다.</p>
+      <p>원래 형식의 새 파일로 저장하며 원본을 덮어쓰지 않습니다. 편집 범위의 글자 서식이 단순화될 수 있으므로 내려받은 파일은 한글 프로그램에서 확인하세요.</p>
+      <h3>문서 보기</h3>
+      <p>그림·수식·표·도형·차트·다단·머리말·꼬리말·각주를 표시합니다. 설치되지 않은 글꼴은 대체되어 원본과 줄바꿈·쪽 수가 달라질 수 있습니다. 일부 개체·구형 형식은 원본과 다르게 표시될 수 있습니다.</p>
+      <p>구형 HWP 3·HML, 암호·배포용 등 특수 문서는 보기만 지원합니다. DRM·일부 구형 암호 방식·손상 문서는 지원하지 않습니다. 저장하지 않은 입력은 창을 닫거나 새로고침하면 복구되지 않습니다.</p>
+      <div class="legal-note"><p>본 제품은 한컴의 HWP 문서 파일(.hwp) 공개 문서를 참고하여 개발하였습니다.</p><a href="./THIRD_PARTY_NOTICES.txt" target="_blank" rel="noopener">외부 라이브러리 및 고지 ↗</a></div>
+    </div>
+  </dialog>
   <script type="module" src="./app.mjs"></script>
 </body>
 </html>
