@@ -1,7 +1,7 @@
 // 문서·비밀번호·편집 이력은 이 Worker 안에서만 처리합니다.
 importScripts("./vendor/cfb.min.js");
 const ready = Promise.all([import("./vendor/rhwp.js"), import("./editor-core.mjs" + new URL(self.location.href).search),
-  import("./text-address.mjs" + new URL(self.location.href).search)]);
+  import("./text-address.mjs" + new URL(self.location.href).search), import("./picture-core.mjs" + new URL(self.location.href).search)]);
 if (typeof OffscreenCanvas !== "undefined") {
   const context = new OffscreenCanvas(1, 1).getContext("2d");
   if (context) self.measureTextWidth = (font, text) => { context.font = font; return context.measureText(text).width; };
@@ -14,7 +14,8 @@ let queue = Promise.resolve();
 self.onmessage = ({ data }) => {
   queue = queue.then(async () => {
     try {
-      const [{ default: init, HwpDocument }, { TextSession }, { paragraphKey, runAddress, sameParagraph }] = await ready;
+      const [{ default: init, HwpDocument }, { TextSession }, { paragraphKey, runAddress, sameParagraph },
+        { picturesOnPage, pictureSource, pictureKey }] = await ready;
       await (initialized ||= init());
       if (data.type === "open") {
         if (!(data.bytes instanceof ArrayBuffer) || data.bytes.byteLength > 32 * 1024 * 1024)
@@ -28,6 +29,14 @@ self.onmessage = ({ data }) => {
         session = new TextSession(doc, bytes, { CFB, passwordUsed: !!data.password });
       }
       if (!session) throw new Error("문서를 먼저 열어 주세요.");
+      if (data.type === "picture-source") {
+        if (data.revision !== session.revision) throw new Error("문서가 변경되었습니다. 사진을 다시 선택하세요.");
+        const p = picturesOnPage(doc, data.page, session.reason).find(p => p.key === pictureKey(data.picture));
+        if (!p?.editable) throw new Error("편집할 사진을 선택하세요.");
+        const source = pictureSource(doc, p);
+        self.postMessage({ id: data.id, type: data.type, ...source }, [source.bytes.buffer]);
+        return;
+      }
       if (data.type === "page") {
         if (!Number.isInteger(data.page) || data.page < 0 || data.page >= doc.pageCount()) throw new Error("표시할 쪽을 찾을 수 없습니다.");
         let page = data.page;
@@ -57,10 +66,13 @@ self.onmessage = ({ data }) => {
             (address.control === undefined || !!cellBounds) };
         });
         self.postMessage({ id: data.id, type: data.type, page, revision: session.revision, svg,
+          pictures: picturesOnPage(doc, page, session.reason),
           runs: pageRuns });
         return;
       }
+      let pictureResult;
       if (data.type === "edit") session.edit(data.section, data.paragraph, data.before, data.text, data);
+      else if (data.type === "picture") pictureResult = session.picture(data);
       else if (["undo", "redo"].includes(data.type)) {
         session.history(data.type);
         doc = session.doc;
@@ -73,7 +85,7 @@ self.onmessage = ({ data }) => {
       const text = JSON.parse(doc.getTextFileUnicode());
       const warnings = JSON.parse(doc.getValidationWarnings());
       const unsupported = session.format === "hml" ? (JSON.parse(doc.getHmlOpenMetadata()).warnings?.length || 0) : 0;
-      self.postMessage({ id: data.id, type: data.type, ...session.summary(), text: text.slice(0, 200000),
+      self.postMessage({ id: data.id, type: data.type, ...session.summary(), ...pictureResult, text: text.slice(0, 200000),
         truncated: text.length > 200000, warnings: warnings.count || 0, unsupported });
     } catch (error) {
       const message = error?.message || String(error);

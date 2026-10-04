@@ -6,8 +6,11 @@ const undo = $("#undo"), redo = $("#redo"), save = $("#save");
 const drafts = new Map(), composing = new Set(), requests = new Map();
 let worker, state, sourceBytes, currentFile, imageUrl, pageCache;
 let nextId = 0, generation = 0, pageRequest = 0, editTimer, flushing, actionBusy = false;
+let pictureEditor, pictureFileContext;
 const { PageEditor } = await import("./page-editor.mjs" + new URL(import.meta.url).search);
-const { paragraphKey, sameParagraph } = await import("./text-address.mjs" + new URL(import.meta.url).search);
+const { PictureEditor, readPicture } = await import("./picture-editor.mjs" + new URL(import.meta.url).search);
+const { HU_PER_PX } = await import("./picture-core.mjs" + new URL(import.meta.url).search);
+const { paragraphKey, sameParagraph, runAddress } = await import("./text-address.mjs" + new URL(import.meta.url).search);
 const pageEditor = new PageEditor({
   change(draft, isComposing) {
     drafts.set(paragraphKey(draft), draft);
@@ -23,6 +26,7 @@ const pageEditor = new PageEditor({
   follow() { if (state && viewMode.value === "document") renderView(true); },
   warn(text) { message(text); }
 });
+pictureEditor = new PictureEditor(pageEditor, { change: pictureAction, warn: message, resize: adjustZoom });
 pageEditor.image.onerror = () => { if (preview.contains(pageEditor.image)) message("쪽 이미지를 표시하지 못했습니다. 텍스트 보기를 이용하세요.", true); };
 
 function message(text, error = false) {
@@ -61,6 +65,9 @@ function updateButtons() {
   undo.disabled = busy || (!state?.canUndo && !drafts.size);
   redo.disabled = busy || !state?.canRedo || drafts.size > 0;
   save.disabled = busy || !state?.canEdit || !hasUnsaved();
+  $("#picture-add").disabled = busy || !state?.canEdit || viewMode.value !== "document";
+  pageEditor.input.readOnly = busy;
+  pictureEditor?.setBusy(busy);
   $("#edit-state").textContent = !state ? "" : hasUnsaved() ? "저장하지 않은 변경" : "변경 없음";
 }
 
@@ -72,7 +79,7 @@ function updateState(data, followCaret = true) {
   viewMode.querySelector('[value="document"]').textContent = state.canEdit ? "문서 편집" : "문서 보기";
   $("#preview-state").textContent = state.revision === 0 ? "원본" : state.dirty ? "수정 중" : "저장한 수정본";
   $("#viewer-status").textContent = `${state.format.toUpperCase()} · ${state.pages}쪽${state.warnings ? ` · 서식 검사 안내 ${state.warnings}건` : ''}${state.unsupported ? ` · 미지원 HML 요소 ${state.unsupported}건` : ''}${state.truncated ? ' · 전체 텍스트는 처음 20만 글자까지 표시' : ''}`;
-  $("#document-properties").textContent = `${$("#viewer-status").textContent} · ${state.canEdit ? "본문·표 셀 편집 가능" : state.reason || "보기 전용"}`;
+  $("#document-properties").textContent = `${$("#viewer-status").textContent} · ${state.canEdit ? "본문·표 셀·사진 편집 가능" : state.reason || "보기 전용"}`;
   updateButtons();
   renderView(followCaret);
 }
@@ -106,6 +113,7 @@ function adjustZoom() {
   const available = preview.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
   const scale = zoom.value === "fit" ? Math.min(1, Math.max(.05, available / width)) : Number(zoom.value);
   pageEditor.surface.style.zoom = scale;
+  pictureEditor?.paint();
   $("#view-info").textContent = `문서 ${state?.canEdit ? "편집" : "보기"} · ${Math.round(scale * 100)}%`;
 }
 
@@ -117,6 +125,7 @@ function showPage(data) {
   releaseImage();
   imageUrl = URL.createObjectURL(new Blob([data.svg], { type: "image/svg+xml" }));
   pageEditor.show(data, imageUrl, width, height);
+  pictureEditor.show(data);
   if (!preview.contains(pageEditor.surface)) preview.replaceChildren(pageEditor.surface);
   pageNumber.value = data.page + 1;
   updateNavigation();
@@ -141,6 +150,7 @@ function renderView(followCaret = false) {
   if (!state) { releaseImage(); preview.replaceChildren($("#empty-document").content.cloneNode(true)); $("#view-info").textContent = ""; return; }
   preview.dataset.mode = viewMode.value;
   if (viewMode.value === "text") {
+    pictureEditor.select(null);
     releaseImage();
     const text = document.createElement("pre"); text.className = "engine-text"; text.textContent = state.text; preview.replaceChildren(text); adjustZoom(); return;
   }
@@ -159,6 +169,7 @@ async function loadFile(file, secret = "") {
   stopWorker();
   clearTimeout(editTimer);
   drafts.clear(); composing.clear(); pageEditor.reset();
+  pictureEditor.reset(); pictureFileContext = null;
   state = null; sourceBytes = null; pageCache = null; flushing = null; actionBusy = false;
   $("#viewer-status").textContent = "";
   $("#document-properties").textContent = "";
@@ -231,7 +242,12 @@ window.addEventListener("dragleave", event => { if (!event.relatedTarget) $(".wo
 window.addEventListener("drop", event => {
   if (!event.dataTransfer?.types.includes("Files")) return;
   event.preventDefault(); $(".workspace").classList.remove("file-drag");
-  chooseFile(event.dataTransfer.files[0]);
+  const file = event.dataTransfer.files[0];
+  if (file?.type.startsWith("image/")) {
+    const hit = pageEditor.atPoint(event);
+    if (hit?.run.editable) { pictureEditor.select(null); pageEditor.activate(hit.run, hit.offset, false); }
+    pictureAction(pictureEditor.selected ? "replace" : "insert", { file });
+  } else chooseFile(file);
 });
 $("#password-form").addEventListener("submit", event => { event.preventDefault(); const secret = $("#password").value; $("#password").value = ""; if (currentFile && sourceBytes) loadFile(currentFile, secret); });
 viewMode.addEventListener("change", () => flushDrafts().then(() => renderView()).catch(e => message(e.message, true)));
@@ -240,6 +256,70 @@ $("#previous-page").addEventListener("click", () => { pageNumber.value = Number(
 $("#next-page").addEventListener("click", () => { pageNumber.value = Number(pageNumber.value) + 1; renderView(); });
 zoom.addEventListener("change", adjustZoom);
 new ResizeObserver(adjustZoom).observe(preview);
+
+function choosePicture(action) {
+  if (action === "insert" && !pageEditor.caret()) { message("본문이나 표 셀을 클릭해 사진을 넣을 위치를 선택하세요."); return; }
+  if (action === "replace" && !pictureEditor.selected) return;
+  pictureFileContext = { action, epoch: generation, picture: pictureEditor.selected, caret: pageEditor.caret() };
+  $("#picture-file").click();
+}
+$("#picture-add").addEventListener("click", () => choosePicture("insert"));
+$("#picture-replace").addEventListener("click", () => choosePicture("replace"));
+$("#picture-file").addEventListener("change", () => {
+  const file = $("#picture-file").files[0], context = pictureFileContext;
+  $("#picture-file").value = ""; pictureFileContext = null;
+  if (file && context?.epoch === generation) pictureAction(context.action, { ...context, file });
+});
+document.addEventListener("paste", event => {
+  if (!state?.canEdit || event.target.closest("#picture-panel")) return;
+  const file = [...(event.clipboardData?.files || [])].find(f => f.type.startsWith("image/"));
+  if (file) { event.preventDefault(); pictureAction(pictureEditor.selected ? "replace" : "insert", { file }); }
+});
+
+async function pictureAction(action, options = {}) {
+  if (actionBusy || !state?.canEdit) return;
+  const epoch = generation, selected = options.picture || pictureEditor.selected;
+  const caret = options.caret || pageEditor.caret();
+  if (action !== "insert" && !selected) return;
+  actionBusy = true; updateButtons(); message("사진 변경을 반영하고 있습니다…");
+  try {
+    await flushDrafts();
+    if (epoch !== generation) return;
+    const revision = state.revision;
+    const data = { action, picture: selected, caret, page: selected?.page ?? Number(pageNumber.value) - 1,
+      revision, props: options.props || {} };
+    if (options.file) {
+      data.image = await readPicture(options.file);
+      if (action === "insert") {
+        const run = pageEditor.runs.find(r => sameParagraph(runAddress(r), caret));
+        const maxWidth = Math.min(320, run?.cellBounds ? run.cellBounds.w - 8 : Number(pageEditor.image.dataset.width) - 60);
+        const scale = Math.min(1, maxWidth / data.image.width, 400 / data.image.height);
+        data.props = { width: Math.max(75, Math.round(data.image.width * scale * HU_PER_PX)),
+          height: Math.max(75, Math.round(data.image.height * scale * HU_PER_PX)) };
+      }
+    }
+    if (action === "crop") {
+      if (!Object.values(options.crop).some(Boolean)) { message("잘라낼 비율을 입력하세요."); return; }
+      const source = await request("picture-source", { picture: selected, page: data.page, revision });
+      data.image = await readPicture(new Blob([source.bytes], { type: source.mime }), options.crop, source);
+      const horizontal = 1 - (options.crop.left + options.crop.right) / 100;
+      const vertical = 1 - (options.crop.top + options.crop.bottom) / 100;
+      const swapped = Math.abs(selected.props.rotationAngle % 180) === 90;
+      data.props = { width: Math.max(1, Math.round(selected.props.width * (swapped ? vertical : horizontal))),
+        height: Math.max(1, Math.round(selected.props.height * (swapped ? horizontal : vertical))) };
+      data.action = "replace";
+    }
+    if (epoch !== generation) return;
+    const result = await request("picture", data, data.image ? [data.image.bytes.buffer] : []);
+    if (epoch !== generation) return;
+    pictureEditor.pendingSelection = result.selectedPicture;
+    if (Number.isInteger(result.selectedPicture?.page)) pageNumber.value = result.selectedPicture.page + 1;
+    if (!result.selectedPicture) pictureEditor.select(null);
+    updateState(result, false);
+    message(action === "delete" ? "사진을 삭제했습니다. 실행 취소로 복원할 수 있습니다." : "사진 변경을 반영했습니다. 저장 버튼으로 내려받으세요.");
+  } catch (error) { if (epoch === generation) { message(error.message, true); pictureEditor.paint(); } }
+  finally { if (epoch === generation) { actionBusy = false; updateButtons(); } }
+}
 
 async function action(type) {
   if (actionBusy || !state?.canEdit) return;

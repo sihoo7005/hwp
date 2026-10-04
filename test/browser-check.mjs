@@ -1,4 +1,4 @@
-import {writeFileSync,readFileSync,existsSync,mkdtempSync} from 'node:fs';
+import {writeFileSync,readFileSync,existsSync,mkdtempSync,unlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {resolve,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -9,6 +9,7 @@ const targets=await (await fetch('http://127.0.0.1:9222/json/list')).json();
 const ws=new WebSocket(targets.find(t=>t.type==='page').webSocketDebuggerUrl);
 await new Promise((resolve,reject)=>{ws.onopen=resolve;ws.onerror=reject});
 let sequence=0,fileChoosers=0;const pending=new Map();const exceptions=[];
+ws.onclose=()=>{for(const p of pending.values())p.reject(new Error('Test browser disconnected'));pending.clear()};
 ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(new Error(JSON.stringify(m.error))):p.resolve(m.result)}else if(m.method==='Runtime.exceptionThrown')exceptions.push(m.params.exceptionDetails);else if(m.method==='Page.javascriptDialogOpening')call('Page.handleJavaScriptDialog',{accept:true}).catch(()=>{});else if(m.method==='Page.fileChooserOpened')fileChoosers++};
 function call(method,params={}){return new Promise((resolve,reject)=>{const id=++sequence;pending.set(id,{resolve,reject});ws.send(JSON.stringify({id,method,params}));})}
 async function evalJS(expression){const r=await call('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw new Error(JSON.stringify(r.exceptionDetails));return r.result.value;}
@@ -280,5 +281,95 @@ assert.equal(await evalJS("document.querySelector('#save').disabled"),true);asse
 const drm=sampleDir+'drm.hwp';writeFileSync(drm,Buffer.from('SCDSA004protected'));assert.ok((await select(drm)).length>0);
 assert.equal(await evalJS("document.querySelector('#password-form').hidden"),true);
 await select(sampleDir+'plain.hwp');await mode('document');assert.match(await svgText(),/서울은/);
+// 사진 도구는 실제 포인터·파일 선택·클립보드·터치와 저장 후 픽셀까지 확인합니다.
+const picturePng=await evalJS(`(()=>{const c=document.createElement('canvas');c.width=320;c.height=160;const g=c.getContext('2d');
+for(const [color,x,y] of [['#ff0000',0,0],['#00ff00',160,0],['#0000ff',0,80],['#ffff00',160,80]]){g.fillStyle=color;g.fillRect(x,y,160,80)}return c.toDataURL('image/png').split(',')[1]})()`);
+const pictureFile=join(downloadDir,'photo.png');writeFileSync(pictureFile,Buffer.from(picturePng,'base64'));
+const pictureBase=new HwpDocument(readFileSync(sampleDir+'plain.hwp'));
+pictureBase.insertParagraph(0,3);pictureBase.createTable(0,3,0,2,2);pictureBase.insertTextInCell(0,3,0,0,0,0,'사진 셀');
+const madePicture=JSON.parse(pictureBase.insertPicture(0,0,3,'[]',Buffer.from(picturePng,'base64'),12000,6000,320,160,'png','사진 검사'));
+pictureBase.setPictureProperties(0,0,madePicture.controlIdx,'{"treatAsChar":true}');
+const {picturesOnPage,pictureProps}=await import(new URL('../picture-core.mjs',import.meta.url));
+for(const format of ['hwp','hwpx'])writeFileSync(join(downloadDir,'pictures.'+format),format==='hwp'?pictureBase.exportHwp():pictureBase.exportHwpx());
+const originalPicture=picturesOnPage(pictureBase,0).find(p=>p.editable);pictureBase.free();
+async function picturePoint(rect,dx=0,dy=0){return await evalJS(`(()=>{const i=document.querySelector('.page-image'),b=i.getBoundingClientRect(),s=b.width/Number(i.dataset.width);return {x:b.left+${rect.x+rect.w/2+dx}*s,y:b.top+${rect.y+rect.h/2+dy}*s}})()`)}
+async function mouseClick(point){await call('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',clickCount:1});await call('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1})}
+async function pictureCommit(expression){const rev=Number(await evalJS("document.querySelector('#preview').dataset.revision"));await evalJS(expression);await waitFor(`Number(document.querySelector('#preview').dataset.revision) !== ${rev} && !document.querySelector('#undo').disabled`);await settled();}
+async function textPoint(text){return await evalJS(`fetch(document.querySelector('.page-image').src).then(r=>r.text()).then(s=>{const rows=new Map();for(const t of new DOMParser().parseFromString(s,'image/svg+xml').querySelectorAll('text')){const key=Math.round(Number(t.getAttribute('y'))*10);if(!rows.has(key))rows.set(key,[]);rows.get(key).push(t)}const row=[...rows.values()].find(row=>row.map(t=>t.textContent).join('').replaceAll(' ','').includes(${JSON.stringify(text.replace(' ',''))}));if(!row)throw new Error('text not visible');const t=row[0],i=document.querySelector('.page-image'),b=i.getBoundingClientRect(),scale=b.width/Number(i.dataset.width);return {x:b.left+(Number(t.getAttribute('x'))+3)*scale,y:b.top+(Number(t.getAttribute('y'))-4)*scale}})`)}
+for(const format of ['hwp','hwpx']) {
+ await call('Emulation.setDeviceMetricsOverride',{width:1100,height:1100,deviceScaleFactor:1,mobile:false});
+ await select(join(downloadDir,'pictures.'+format));await settled();
+ await mouseClick(await picturePoint(originalPicture));await waitFor("!document.querySelector('#picture-panel').hidden");
+ assert.equal(await evalJS("document.querySelector('.picture-frame').hidden"),false);
+ await pictureCommit("{const w=document.querySelector('#picture-width');w.value='60';w.dispatchEvent(new Event('input'));document.querySelector('#picture-size-apply').click()}");
+ assert.equal(await evalJS("document.querySelector('#picture-width').value"),'60.0');
+ const widthBefore=Number(await evalJS("document.querySelector('#picture-width').value"));
+ const handle=await evalJS("(()=>{const b=document.querySelector('.picture-handle.se').getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/2}})()");
+ let rev=Number(await evalJS("document.querySelector('#preview').dataset.revision"));
+ await call('Input.dispatchMouseEvent',{type:'mousePressed',...handle,button:'left',clickCount:1});
+ await call('Input.dispatchMouseEvent',{type:'mouseMoved',x:handle.x+20,y:handle.y+10,button:'left',buttons:1});
+ await call('Input.dispatchMouseEvent',{type:'mouseReleased',x:handle.x+20,y:handle.y+10,button:'left',clickCount:1});
+ await waitFor(`Number(document.querySelector('#preview').dataset.revision) !== ${rev} && !document.querySelector('#undo').disabled`);await settled();
+ assert.ok(Number(await evalJS("document.querySelector('#picture-width').value"))>widthBefore);
+ await pictureCommit("document.querySelector('#picture-rotate-right').click()");
+ assert.equal(await evalJS("document.querySelector('#picture-angle').value"),'90');
+ await pictureCommit("{const s=document.querySelector('#picture-layout');s.value='InFrontOfText';s.dispatchEvent(new Event('change'))}");
+ const center=await evalJS("(()=>{const b=document.querySelector('.picture-frame').getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/2}})()");
+ const xBefore=Number(await evalJS("document.querySelector('#picture-x').value"));rev=Number(await evalJS("document.querySelector('#preview').dataset.revision"));
+ await call('Input.dispatchMouseEvent',{type:'mousePressed',...center,button:'left',clickCount:1});
+ await call('Input.dispatchMouseEvent',{type:'mouseMoved',x:center.x+25,y:center.y+15,button:'left',buttons:1});
+ await call('Input.dispatchMouseEvent',{type:'mouseReleased',x:center.x+25,y:center.y+15,button:'left',clickCount:1});
+ await waitFor(`Number(document.querySelector('#preview').dataset.revision) !== ${rev} && !document.querySelector('#undo').disabled`);await settled();
+ assert.ok(Number(await evalJS("document.querySelector('#picture-x').value"))>xBefore);
+ await pictureCommit("document.querySelector('#picture-align-center').click()");
+ await call('Page.setInterceptFileChooserDialog',{enabled:true});
+ await evalJS("document.querySelector('#picture-replace').click()");
+ const photoInput=await call('DOM.querySelector',{nodeId:root.root.nodeId,selector:'#picture-file'});
+ rev=Number(await evalJS("document.querySelector('#preview').dataset.revision"));
+ await call('DOM.setFileInputFiles',{nodeId:photoInput.nodeId,files:[pictureFile]});
+ await waitFor(`Number(document.querySelector('#preview').dataset.revision) !== ${rev} && !document.querySelector('#undo').disabled`);await settled();
+ await call('Page.setInterceptFileChooserDialog',{enabled:false});
+ await pictureCommit("document.querySelector('#picture-crop-left').value=50;document.querySelector('#picture-crop button').click()");
+ const croppedRect=await evalJS("(()=>{const s=document.querySelector('.picture-frame').style;return {x:parseFloat(s.left),y:parseFloat(s.top),w:parseFloat(s.width),h:parseFloat(s.height)}})()");
+ await pictureCommit("document.querySelector('#picture-delete').click()");assert.equal(await evalJS("document.querySelector('#picture-panel').hidden"),true);
+ rev=Number(await evalJS("document.querySelector('#preview').dataset.revision"));
+ await evalJS("document.querySelector('#undo').click()");await waitFor(`Number(document.querySelector('#preview').dataset.revision) === ${rev-1}`);await settled();
+ await mouseClick(await picturePoint(croppedRect));await waitFor("!document.querySelector('#picture-panel').hidden");
+ await evalJS("document.querySelector('#save').click()");await waitFor("document.querySelector('#status').textContent.includes('다운로드를 시작')");
+ const saved=join(downloadDir,'pictures_수정.'+format);for(let i=0;i<40&&!existsSync(saved);i++)await new Promise(r=>setTimeout(r,100));assert.ok(existsSync(saved));
+ const reopened=new HwpDocument(readFileSync(saved));const p=picturesOnPage(reopened,0).find(p=>p.editable);
+ assert.equal(pictureProps(reopened,p).rotationAngle,90);assert.equal(pictureProps(reopened,p).horzAlign,'Center');
+ const cropBytes=reopened.getControlImageData(p.section,p.paragraph,JSON.stringify(p.path),p.control);reopened.free();
+ assert.equal(Buffer.from(cropBytes).readUInt32BE(16),160,'자른 사진의 실제 픽셀 너비');
+ const pixel=await evalJS(`(async()=>{const b=Uint8Array.from(atob(${JSON.stringify(Buffer.from(cropBytes).toString('base64'))}),c=>c.charCodeAt(0));const img=await createImageBitmap(new Blob([b],{type:'image/png'}));const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const g=c.getContext('2d');g.drawImage(img,0,0);img.close();return [...g.getImageData(5,5,1,1).data]})()`);
+ assert.deepEqual(pixel,[0,255,0,255],'자르기는 화면과 저장한 사진에 함께 적용');
+ unlinkSync(saved);
+ await evalJS("document.querySelector('#picture-close').click()");await mouseClick(await textPoint('나는 서울'));await waitFor("document.activeElement.id==='document-input'");
+ await call('Page.setInterceptFileChooserDialog',{enabled:true});await evalJS("document.querySelector('#picture-add').click()");
+ rev=Number(await evalJS("document.querySelector('#preview').dataset.revision"));await call('DOM.setFileInputFiles',{nodeId:photoInput.nodeId,files:[pictureFile]});
+ await waitFor(`Number(document.querySelector('#preview').dataset.revision) !== ${rev} && !document.querySelector('#undo').disabled`);await settled();await call('Page.setInterceptFileChooserDialog',{enabled:false});
+ await evalJS("document.querySelector('#picture-close').click()");await mouseClick(await textPoint('서울의 날씨'));
+ await pictureCommit(`{const dt=new DataTransfer();dt.items.add(new File([Uint8Array.from(atob(${JSON.stringify(picturePng)}),c=>c.charCodeAt(0))],'paste.png',{type:'image/png'}));document.querySelector('#document-input').dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:dt}))}`);
+ await evalJS("document.querySelector('#picture-close').click()");const cellPoint=await textPoint('사진 셀');
+ await pictureCommit(`{const dt=new DataTransfer();dt.items.add(new File([Uint8Array.from(atob(${JSON.stringify(picturePng)}),c=>c.charCodeAt(0))],'drop.png',{type:'image/png'}));document.querySelector('#preview').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt,clientX:${cellPoint.x},clientY:${cellPoint.y}}))}`);
+ const desktopPicture=await call('Page.captureScreenshot',{format:'png'});writeFileSync(join(downloadDir,'pictures-desktop-'+format+'.png'),Buffer.from(desktopPicture.data,'base64'));
+ await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});await call('Emulation.setTouchEmulationEnabled',{enabled:true});
+ await evalJS("document.querySelector('.picture-frame').scrollIntoView({block:'center'})");
+ assert.equal(await evalJS('document.documentElement.scrollWidth <= window.innerWidth'),true);
+ const mobileHandle=await evalJS("(()=>{const b=document.querySelector('.picture-handle.se').getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/2,w:b.width}})()");assert.ok(mobileHandle.w>=23,'모바일 조절점은 확대 비율과 관계없이 터치 크기를 유지');
+ rev=Number(await evalJS("document.querySelector('#preview').dataset.revision"));
+ await call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:mobileHandle.x,y:mobileHandle.y}]});
+ await call('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:mobileHandle.x+15,y:mobileHandle.y+10}]});
+ await call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ await waitFor(`Number(document.querySelector('#preview').dataset.revision) !== ${rev} && !document.querySelector('#undo').disabled`);await settled();
+ await evalJS("document.querySelector('#save').click()");await waitFor("document.querySelector('#status').textContent.includes('다운로드를 시작')");
+ for(let i=0;i<40&&!existsSync(saved);i++)await new Promise(r=>setTimeout(r,100));assert.ok(existsSync(saved));
+ const finalPictures=new HwpDocument(readFileSync(saved));
+ try {let count=0;for(let page=0;page<finalPictures.pageCount();page++)count+=picturesOnPage(finalPictures,page).filter(p=>p.editable).length;
+ assert.equal(count,4);assert.equal(finalPictures.getTextInCell(0,3,0,0,0,0,20000),'사진 셀');assert.match(finalPictures.getTextRange(0,1,0,20000),/나는 서울/);}finally{finalPictures.free();}
+ const mobilePicture=await call('Page.captureScreenshot',{format:'png'});writeFileSync(join(downloadDir,'pictures-mobile-'+format+'.png'),Buffer.from(mobilePicture.data,'base64'));
+ await call('Emulation.setTouchEmulationEnabled',{enabled:false});
+ console.log('PASS picture editor:',format,'selection, numeric/drag resize, rotate, move, align, replace, crop pixels, delete/undo, insert, paste/drop, table cell, mobile touch and save');
+}
 assert.deepEqual(exceptions,[]);
 console.log('PASS: paginated HWP/HWPX/HML/HWP3; images/equations/charts/shapes; notes/header samples; protected files/wrong password; distribution files; navigation; safe image rendering; on-page body and table cell editing/IME/caret/selection/keyboard; undo/redo; variable-length save/reopen; pending edits at save; click-to-edit; mobile zoom; no exceptions');console.log('Downloads and screenshots:',downloadDir);ws.close();
