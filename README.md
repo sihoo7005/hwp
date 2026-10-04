@@ -83,6 +83,6 @@ node test/browser-check.mjs https://sihoo7005.github.io/hwp/ /path/to/samples
 
 ## 배포와 고지
 
-`npm run build`는 `dist/`를 다시 생성합니다. `main` 푸시 시 GitHub Actions가 의존성 설치·검사·빌드 후 Pages에 배포합니다. [배포 상태](https://github.com/sihoo7005/hwp/actions/workflows/pages.yml), [개발 계획](./HWP_WEB_PLAN.md).
+`npm run build`는 `dist/`를 다시 생성합니다. `main` 푸시 시 GitHub Actions가 의존성 설치·검사·빌드 후 Pages에 배포합니다. [배포 상태](https://github.com/sihoo7005/hwp/actions/workflows/pages.yml), [개발 계획](./HWP_WEB_PLAN.md), [한컴 에디터 기능·UI 조사](./docs/research/HANCOM_EDITOR_RESEARCH.md).
 
 본 제품은 한컴의 HWP 문서 파일(.hwp) 공개 문서를 참고하여 개발하였습니다. `cfb 1.2.2`는 HWP 보호 플래그 확인에, `@rhwp/core 0.8.6`은 보기·편집·저장에 사용합니다. 외부 라이브러리 고지와 [rhwp 의존성 고지](./RHWP_THIRD_PARTY_LICENSES.md)는 배포 파일에도 포함합니다. 원본 HWP와 참고 PDF, 테스트 샘플은 사이트 산출물에 포함하지 않습니다.
