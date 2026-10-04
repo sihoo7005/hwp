@@ -69,6 +69,7 @@ function textRuns(bytes, record) {
   const data = view(bytes);
   const end = record.offset + record.size;
   const runs = [];
+  const displayRuns = [];
   let offset = record.offset;
   let text = "";
   let supported = true;
@@ -79,6 +80,7 @@ function textRuns(bytes, record) {
       while (offset < end && data.getUint16(offset, true) >= 32) offset += 2;
       const value = decoder.decode(bytes.subarray(start, offset));
       runs.push({ offset: start, text: value });
+      displayRuns.push({ position: (start - record.offset) / 2, length: value.length, text: value });
       text += value;
       continue;
     }
@@ -87,14 +89,14 @@ function textRuns(bytes, record) {
     check(offset + size <= end, "본문의 제어 문자가 잘렸습니다.");
     if (size === 16) check(data.getUint16(offset + 14, true) === code, "본문의 제어 문자 경계가 잘못되었습니다.");
     if (![2, 9, 10, 13, 24, 30, 31].includes(code)) supported = false;
-    if (code === 9) text += "\t";
-    else if (code === 10) text += "\n";
-    else if (code === 24) text += "-";
-    else if (code === 30 || code === 31) text += " ";
-    else if (code !== 2 && code !== 13) text += "[개체]";
+    const value = code === 9 ? "\t" : code === 10 ? "\n" : code === 24 ? "-" :
+      code === 30 || code === 31 ? " " : code !== 2 && code !== 13 ? "[개체]" : "";
+    if (value) displayRuns.push({ position: (offset - record.offset) / 2, length: size / 2,
+      text: value, control: true, object: value === "[개체]" });
+    text += value;
     offset += size;
   }
-  return { runs, text, supported };
+  return { runs, displayRuns, text, supported };
 }
 
 export function openHwp(input) {
@@ -123,7 +125,8 @@ export function openHwp(input) {
   const docInfo = streams.find(item => item.path === "DocInfo");
   check(docInfo, "DocInfo 문서 정보가 없습니다.");
   const infoBytes = compressed ? inflate(docInfo.entry.content, budget) : new Uint8Array(docInfo.entry.content);
-  const props = readRecords(infoBytes, budget).find(record => record.tag === 16);
+  const infoRecords = readRecords(infoBytes, budget);
+  const props = infoRecords.find(record => record.tag === 16);
   check(props?.size >= 2, "구역 수를 확인할 문서 속성이 없습니다.");
   const sections = streams.filter(item => /^BodyText\/Section\d+$/.test(item.path))
     .sort((a, b) => Number(a.path.match(/\d+$/)[0]) - Number(b.path.match(/\d+$/)[0]));
@@ -148,7 +151,7 @@ export function openHwp(input) {
       }
       if (record.tag === 66) {
         check(record.size >= 22, "문단 헤더가 잘렸습니다.");
-        paragraph = { header: record, textRecord: null, runs: [], text: "", level: record.level };
+        paragraph = { header: record, textRecord: null, runs: [], displayRuns: [], charShapes: [], text: "", level: record.level };
         section.paragraphs.push(paragraph);
         paragraphs.push(paragraph);
         check(paragraphs.length <= 5000, "화면에 표시할 문단이 5천 개 한도를 초과합니다.");
@@ -161,11 +164,22 @@ export function openHwp(input) {
         if (!parsed.supported) editable = false;
         textSize += parsed.text.length;
         check(textSize <= 200000, "화면에 표시할 본문이 20만 글자 한도를 초과합니다.");
+      } else if (record.tag === 68 && paragraph && record.level === paragraph.level + 1) {
+        check(record.size % 8 === 0, "문단의 글자 모양 정보가 잘렸습니다.");
+        budget.styles = (budget.styles || 0) + record.size / 8;
+        check(budget.styles <= 50000, "화면에 표시할 글자 모양 구간이 5만 개 한도를 초과합니다.");
+        for (let offset = record.offset; offset < record.offset + record.size; offset += 8) {
+          const position = data.getUint32(offset, true);
+          check(position <= (data.getUint32(paragraph.header.offset, true) & 0x7fffffff), "글자 모양의 위치가 문단 범위를 벗어납니다.");
+          check(paragraph.charShapes.length === 0 ? position === 0 : position > paragraph.charShapes.at(-1).position,
+            "문단의 글자 모양 순서가 잘못되었습니다.");
+          paragraph.charShapes.push({ position, id: data.getUint32(offset + 4, true) });
+        }
       }
     }
   }
   check(paragraphs.length > 0, "읽을 수 있는 본문 문단이 없습니다.");
-  return { bytes, streams, sections, compressed, paragraphs, editable,
+  return { bytes, streams, sections, infoBytes, infoRecords, compressed, paragraphs, editable,
     reason: editable ? "" : "표·그림·수식·필드 또는 미지원 구조가 있어 본문 확인만 가능합니다." };
 }
 
@@ -218,5 +232,5 @@ export function replaceHwp(document, from, to) {
       Array.from(item.entry.content).every((byte, i) => byte === preserved.entry.content[i]),
       `저장 중 ${item.path} 스트림이 변경되었습니다.`);
   }
-  return { bytes, count, paragraphs: reopened.paragraphs.map(p => p.text) };
+  return { bytes, count, paragraphs: reopened.paragraphs.map(p => p.text), document: reopened };
 }

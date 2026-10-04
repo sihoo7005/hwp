@@ -4,15 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>HWP 단어 바꾸기 · 실험판</title>
+  <title>HWP 뷰어와 단어 바꾸기 · 실험판</title>
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
   <main>
     <header>
-      <p class="eyebrow">HWP 편집 · 첫 번째 실험</p>
-      <h1>문서의 단어를 바꿔 보세요.</h1>
-      <p>파일을 열고, 같은 길이의 단어로 바꾼 뒤 새 HWP로 내려받으세요.<br>문서 내용은 브라우저 안에서 처리합니다.</p>
+      <p class="eyebrow">HWP 뷰어 · 단어 바꾸기</p>
+      <h1>문서를 보고 단어를 바꾸세요.</h1>
+      <p>본문의 서식을 확인하고, 같은 길이의 단어로 바꾼 뒤 새 HWP로 내려받으세요.<br>문서 내용은 브라우저 안에서 처리합니다.</p>
     </header>
 
     <section class="card" aria-labelledby="open-title">
@@ -41,9 +41,15 @@
     </section>
 
     <section class="card" aria-labelledby="preview-title">
-      <div class="preview-heading"><h2 id="preview-title"><span class="step">3</span> 본문 확인</h2><span id="preview-state" class="muted">원본</span></div>
-      <div id="preview" class="preview"><p class="empty">여기에 문서의 본문이 표시됩니다.</p></div>
-      <p class="muted">이 화면은 본문 텍스트 확인용입니다. 원본의 글꼴과 쪽 배치는 재현하지 않습니다.</p>
+      <div class="preview-heading"><h2 id="preview-title"><span class="step">3</span> 문서 보기</h2><span id="preview-state" class="muted">원본</span></div>
+      <div class="viewer-toolbar">
+        <label for="view-mode">보기<select id="view-mode" disabled><option value="document">문서</option><option value="text">텍스트</option></select></label>
+        <label for="zoom">확대<select id="zoom" disabled><option value="fit">너비 맞춤</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option></select></label>
+        <label for="document-version">내용<select id="document-version" disabled><option value="original">원본</option><option value="result" disabled>치환 결과</option></select></label>
+        <span id="view-info" class="muted" aria-live="polite"></span>
+      </div>
+      <div id="preview" class="preview" data-mode="document" tabindex="0" role="region" aria-label="문서 미리보기"><p class="empty">HWP 파일을 열면 여기에 문서가 표시됩니다.</p></div>
+      <p class="muted">용지 크기와 여백, 글자 크기·색·굵기, 문단 정렬을 적용한 구역별 미리보기입니다. 설치되지 않은 글꼴은 대체되며, 실제 줄바꿈·쪽 나눔은 다를 수 있습니다. 표·그림·수식은 [개체]와 내부 텍스트로 표시합니다. 휴대폰에서 작게 보이면 확대하거나 텍스트 보기를 선택하세요.</p>
     </section>
 
     <aside class="notice">

@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import * as pako from "pako";
 import { openHwp, replaceHwp, readRecords, encodeText } from "../hwp.mjs";
+import { readView } from "../viewer.mjs";
 
 const require = createRequire(import.meta.url);
 const CFB = require("cfb");
@@ -27,7 +28,7 @@ function record(tag, level, payload) {
 }
 
 // 레코드 처리용 합성 파일이다. 실제 한글 프로그램과의 호환성을 증명하지 않는다.
-function fixture({ compressed = false, flags = 0, text = "서울에서 서울을 만납니다.", extra = [], controls = false, sections = 1 } = {}) {
+function fixture({ compressed = false, flags = 0, text = "서울에서 서울을 만납니다.", extra = [], controls = false, sections = 1, infoRecords = [], charShapes = new Uint8Array(8) } = {}) {
   const cfb = CFB.utils.cfb_new();
   const header = new Uint8Array(256);
   header.set(new TextEncoder().encode("HWP Document File"));
@@ -37,7 +38,7 @@ function fixture({ compressed = false, flags = 0, text = "서울에서 서울을
   CFB.utils.cfb_add(cfb, "FileHeader", header);
   const props = new Uint8Array(30);
   new DataView(props.buffer).setUint16(0, sections, true);
-  const info = record(16, 0, props);
+  const info = concat([record(16, 0, props), ...infoRecords]);
   CFB.utils.cfb_add(cfb, "DocInfo", compressed ? pako.deflateRaw(info) : info);
   for (let i = 0; i < sections; i++) {
     const marker = new Uint8Array(controls ? 16 : 0);
@@ -52,9 +53,9 @@ function fixture({ compressed = false, flags = 0, text = "서울에서 서울을
     const para = new Uint8Array(24);
     const p = new DataView(para.buffer);
     p.setUint32(0, textBytes.length / 2, true);
-    p.setUint16(12, 1, true);
+    p.setUint16(12, charShapes.length / 8, true);
     p.setUint16(16, 1, true);
-    const shape = new Uint8Array(8);
+    const shape = charShapes;
     const line = new Uint8Array(36);
     const body = concat([record(66, 0, para), record(67, 1, textBytes), record(68, 1, shape), record(69, 1, line), ...extra]);
     CFB.utils.cfb_add(cfb, `BodyText/Section${i}`, compressed ? pako.deflateRaw(body) : body);
@@ -151,4 +152,73 @@ test("브라우저용 라이브러리가 Worker 전역에서 로드됨", () => {
   assert.equal(typeof context.CFB.write, "function");
   assert.equal(typeof context.pako.Inflate, "function");
   assert.deepEqual([...context.pako.inflateRaw(context.pako.deflateRaw(Uint8Array.of(1, 2, 3)))], [1, 2, 3]);
+});
+
+test("뷰어: 제어 문자 뒤의 서식 경계·언어별 글꼴·문단·가로 용지와 치환 결과", () => {
+  const mappings = new Uint8Array(72);
+  const m = new DataView(mappings.buffer);
+  m.setUint32(4, 2, true); m.setUint32(8, 2, true);
+  const fonts = ["한글 A", "한글 B", "Latin A", "Latin B"].map(name => {
+    const bytes = encodeText(name);
+    const prefix = new Uint8Array(3);
+    new DataView(prefix.buffer).setUint16(1, name.length, true);
+    return record(19, 1, concat([prefix, bytes]));
+  });
+  const chars = [0, 1].map(id => {
+    const bytes = new Uint8Array(68), c = new DataView(bytes.buffer);
+    c.setUint16(0, id, true); c.setUint16(2, id, true);
+    c.setInt32(42, id ? 1400 : 1100, true);
+    c.setUint32(46, id ? 7 : 0, true); // 굵게·기울임·밑줄
+    c.setUint32(52, 0x00332211, true); c.setUint32(60, 0xffffffff, true);
+    return record(21, 1, bytes);
+  });
+  const para = new Uint8Array(54), p = new DataView(para.buffer);
+  p.setUint32(0, 3 << 2, true); p.setInt32(4, 1500, true);
+  p.setInt32(12, -300, true); p.setInt32(16, 900, true); p.setInt32(20, 1200, true);
+  p.setUint32(50, 180, true);
+  const page = new Uint8Array(40), pg = new DataView(page.buffer);
+  for (const [offset, value] of [[0, 60000], [4, 90000], [8, 3000], [12, 4500], [16, 6000], [20, 7500], [36, 1]]) pg.setUint32(offset, value, true);
+  const shape = new Uint8Array(16), s = new DataView(shape.buffer);
+  s.setUint32(8, 9, true); s.setUint32(12, 1, true); // 8 WCHAR 컨트롤 뒤 '서'와 '울' 사이
+  const doc = openHwp(fixture({ text: "서울", controls: true, charShapes: shape,
+    infoRecords: [record(17, 0, mappings), ...fonts, ...chars, record(25, 1, para)], extra: [record(73, 2, page)] }));
+  const view = readView(doc), section = view.sections[0];
+  assert.deepEqual(section.page, { width: 1200, height: 800, left: 40, right: 60, top: 80, bottom: 100 });
+  assert.deepEqual(view.chars[1].fonts, ["한글 B", "Latin B"]);
+  assert.equal(view.chars[1].size, 14);
+  assert.equal(view.chars[1].bold && view.chars[1].italic && view.chars[1].underline, true);
+  assert.equal(view.chars[1].color, "#112233");
+  assert.equal(view.chars[1].background, "transparent");
+  assert.deepEqual(section.paragraphs[0].runs, [{ text: "서", id: 0, object: false }, { text: "울", id: 1, object: false }]);
+  assert.deepEqual(section.paragraphs[0].style, { align: "center", left: 10, right: 0, indent: -2, before: 6, after: 8, lineHeight: 1.8 });
+  const saved = readView(replaceHwp(doc, "서울", "부산").document);
+  assert.deepEqual(saved.sections[0].paragraphs[0].runs.map(r => r.text), ["부", "산"]);
+  assert.deepEqual(saved.chars, view.chars);
+});
+
+test("뷰어: 실제 테스트 HWP의 A4·11pt·3문단과 서식 없는 문서의 기본 표시", () => {
+  const model = readView(openHwp(readFileSync(new URL("../hwp file for test.hwp", import.meta.url))));
+  const section = model.sections[0];
+  assert.ok(Math.abs(section.page.width - 793.7) < 1);
+  assert.ok(Math.abs(section.page.height - 1122.5) < 1);
+  assert.equal(section.paragraphs.length, 3);
+  assert.ok(Math.abs(section.page.top - 132.27) < 1); // 위 여백 + 머리말 영역
+  assert.equal(section.paragraphs[0].text, "서울은 대한민국의 수도이다.");
+  assert.equal(model.chars[section.paragraphs[0].runs[0].id].size, 11);
+  assert.equal(model.chars[section.paragraphs[0].runs[0].id].fonts[0], "NanumGothic");
+  assert.equal(section.paragraphs.map(p => p.runs.map(r => r.text).join("")).join("\n"), section.paragraphs.map(p => p.text).join("\n"));
+  const fallback = readView(openHwp(fixture()));
+  assert.deepEqual(fallback.chars, []);
+  assert.equal(fallback.sections[0].paragraphs[0].runs[0].text, "서울에서 서울을 만납니다.");
+});
+
+test("뷰어: 잘린 서식 레코드는 기본 표시, 잘못된 본문 서식 위치는 거절", () => {
+  const page = new Uint8Array(40);
+  const view = readView(openHwp(fixture({ infoRecords: [record(19, 1, new Uint8Array(2)), record(21, 1, new Uint8Array(10)), record(25, 1, new Uint8Array(10))], extra: [record(73, 2, page)] })));
+  assert.equal(view.sections[0].page.width, 793.7);
+  assert.deepEqual(view.chars, [{}]);
+  const shape = new Uint8Array(16);
+  new DataView(shape.buffer).setUint32(8, 99999, true);
+  assert.throws(() => openHwp(fixture({ charShapes: shape })), /문단 범위/);
+  assert.throws(() => openHwp(fixture({ charShapes: new Uint8Array(9) })), /잘렸습니다/);
 });
