@@ -257,10 +257,20 @@ $("#next-page").addEventListener("click", () => { pageNumber.value = Number(page
 zoom.addEventListener("change", adjustZoom);
 new ResizeObserver(adjustZoom).observe(preview);
 
+function pictureCaret() {
+  const caret = pageEditor.caret();
+  if (caret && state?.paragraphs.some(p => p.editable && sameParagraph(p, caret))) return caret;
+  const run = pageEditor.runs.find(r => r.editable);
+  if (run) return { ...runAddress(run), offset: run.charStart };
+  const paragraph = state?.paragraphs.find(p => p.editable);
+  return paragraph ? { ...paragraph, offset: 0 } : null;
+}
+
 function choosePicture(action) {
-  if (action === "insert" && !pageEditor.caret()) { message("본문이나 표 셀을 클릭해 사진을 넣을 위치를 선택하세요."); return; }
+  const caret = action === "insert" ? pictureCaret() : pageEditor.caret();
+  if (action === "insert" && !caret) { message("사진을 추가할 수 있는 일반 본문이나 표 셀이 없습니다."); return; }
   if (action === "replace" && !pictureEditor.selected) return;
-  pictureFileContext = { action, epoch: generation, picture: pictureEditor.selected, caret: pageEditor.caret() };
+  pictureFileContext = { action, epoch: generation, picture: pictureEditor.selected, caret };
   $("#picture-file").click();
 }
 $("#picture-add").addEventListener("click", () => choosePicture("insert"));
@@ -279,7 +289,8 @@ document.addEventListener("paste", event => {
 async function pictureAction(action, options = {}) {
   if (actionBusy || !state?.canEdit) return;
   const epoch = generation, selected = options.picture || pictureEditor.selected;
-  const caret = options.caret || pageEditor.caret();
+  const caret = options.caret || (action === "insert" ? pictureCaret() : pageEditor.caret());
+  if (action === "insert" && !caret) { message("사진을 추가할 수 있는 일반 본문이나 표 셀이 없습니다."); return; }
   if (action !== "insert" && !selected) return;
   actionBusy = true; updateButtons(); message("사진 변경을 반영하고 있습니다…");
   try {

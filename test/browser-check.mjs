@@ -17,6 +17,8 @@ async function waitFor(expression){await evalJS(`new Promise((resolve,reject)=>{
 async function clickSelector(selector){const point=await evalJS(`(()=>{const b=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/2}})()`);await call('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',clickCount:1});await call('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1});}
 await call('Runtime.enable');await call('Page.enable');
 await call('Emulation.setDeviceMetricsOverride',{width:1100,height:1100,deviceScaleFactor:1,mobile:false});
+await call('Page.navigate',{url:'about:blank'});
+await waitFor("location.href==='about:blank'");
 await call('Page.navigate',{url:process.argv[2] || 'http://127.0.0.1:8765/'});
 await waitFor("document.querySelector('#file') && document.querySelector('#status') && document.readyState === 'complete'");
 await new Promise(resolve=>setTimeout(resolve,300));
@@ -294,9 +296,56 @@ for(const format of ['hwp','hwpx'])writeFileSync(join(downloadDir,'pictures.'+fo
 const originalPicture=picturesOnPage(pictureBase,0).find(p=>p.editable);pictureBase.free();
 async function picturePoint(rect,dx=0,dy=0){return await evalJS(`(()=>{const i=document.querySelector('.page-image'),b=i.getBoundingClientRect(),s=b.width/Number(i.dataset.width);return {x:b.left+${rect.x+rect.w/2+dx}*s,y:b.top+${rect.y+rect.h/2+dy}*s}})()`)}
 async function mouseClick(point){await call('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',clickCount:1});await call('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1})}
+async function touchGesture(point,dx=0,dy=0){
+ await call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});
+ await new Promise(r=>setTimeout(r,50));
+ if(dx||dy)await call('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:point.x+dx,y:point.y+dy}]});
+ await call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ await new Promise(r=>setTimeout(r,100));
+}
+async function touchSelector(selector){const point=await evalJS(`(()=>{const b=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/2}})()`);await touchGesture(point)}
+async function touchFileChooser(selector,message){
+ const before=fileChoosers;await touchSelector(selector);
+ for(let i=0;i<20&&fileChoosers===before;i++)await new Promise(r=>setTimeout(r,50));
+ assert.equal(fileChoosers,before+1,message);
+}
 async function pictureCommit(expression){const rev=Number(await evalJS("document.querySelector('#preview').dataset.revision"));await evalJS(expression);await waitFor(`Number(document.querySelector('#preview').dataset.revision) !== ${rev} && !document.querySelector('#undo').disabled`);await settled();}
 async function textPoint(text){return await evalJS(`fetch(document.querySelector('.page-image').src).then(r=>r.text()).then(s=>{const rows=new Map();for(const t of new DOMParser().parseFromString(s,'image/svg+xml').querySelectorAll('text')){const key=Math.round(Number(t.getAttribute('y'))*10);if(!rows.has(key))rows.set(key,[]);rows.get(key).push(t)}const row=[...rows.values()].find(row=>row.map(t=>t.textContent).join('').replaceAll(' ','').includes(${JSON.stringify(text.replace(' ',''))}));if(!row)throw new Error('text not visible');const t=row[0],i=document.querySelector('.page-image'),b=i.getBoundingClientRect(),scale=b.width/Number(i.dataset.width);return {x:b.left+(Number(t.getAttribute('x'))+3)*scale,y:b.top+(Number(t.getAttribute('y'))-4)*scale}})`)}
 for(const format of ['hwp','hwpx']) {
+ await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+ await call('Emulation.setTouchEmulationEnabled',{enabled:true});
+ await select(join(downloadDir,'pictures.'+format));await settled();
+ const mobilePhotoInput=await call('DOM.querySelector',{nodeId:root.root.nodeId,selector:'#picture-file'});
+ await call('Page.setInterceptFileChooserDialog',{enabled:true});
+ await touchFileChooser('#picture-add','사진 추가는 커서가 없어도 파일 선택 창을 연다');
+ await call('DOM.setFileInputFiles',{nodeId:mobilePhotoInput.nodeId,files:[]});
+ await touchGesture(await picturePoint(originalPicture),12,8);
+ await waitFor("!document.querySelector('#picture-panel').hidden");
+ assert.equal(await evalJS("document.querySelector('#preview').dataset.revision"),'0','첫 터치는 사진 선택만 한다');
+ assert.equal(await evalJS("document.querySelector('#picture-layout').value"),'inline','선택으로 앵커가 변경되지 않는다');
+ const mobileCenter=await evalJS("(()=>{const b=document.querySelector('.picture-frame').getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/2}})()");
+ await call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[mobileCenter]});
+ await evalJS("document.querySelector('#preview').scrollTop+=30");
+ await call('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:mobileCenter.x+2,y:mobileCenter.y+2}]});
+ await call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ await evalJS('new Promise(r=>setTimeout(r,100))');
+ assert.equal(await evalJS("document.querySelector('#preview').dataset.revision"),'0','화면 위치 변경과 작은 손떨림으로 사진이 이동하지 않는다');
+ assert.equal(await evalJS("document.querySelector('.picture-frame').style.left"),originalPicture.x+'px');
+ assert.equal(await evalJS("document.querySelector('.picture-frame').style.top"),originalPicture.y+'px');
+ const movePoint=await evalJS("(()=>{const b=document.querySelector('.picture-frame').getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/2}})()");
+ const mobileX=Number(await evalJS("document.querySelector('#picture-x').value"));
+ await touchGesture(movePoint,18,10);
+ await waitFor("document.querySelector('#preview').dataset.revision!=='0' && !document.querySelector('#undo').disabled");await settled();
+ assert.ok(Number(await evalJS("document.querySelector('#picture-x').value"))>mobileX,'선택한 사진을 다시 끌면 이동한다');
+ await touchSelector('#undo');await waitFor("document.querySelector('#preview').dataset.revision==='0'");await settled();
+ await touchFileChooser('#picture-add','사진이 선택돼 있어도 사진 추가는 파일 선택 창을 연다');
+ await call('DOM.setFileInputFiles',{nodeId:mobilePhotoInput.nodeId,files:[pictureFile]});
+ await waitFor("document.querySelector('#preview').dataset.revision!=='0' && !document.querySelector('#undo').disabled");await settled();
+ assert.equal(await evalJS("document.querySelector('.picture-frame').dataset.key.split(':')[1]"),'1','커서가 없으면 현재 쪽의 첫 편집 가능한 본문에 추가');
+ await touchSelector('#undo');await waitFor("document.querySelector('#preview').dataset.revision==='0'");await settled();
+ await call('Page.setInterceptFileChooserDialog',{enabled:false});
+ await call('Emulation.setTouchEmulationEnabled',{enabled:false});
+ console.log('PASS mobile picture regression:',format,'add without caret/with selected photo; tap and layout shift preserve position; second drag moves');
  await call('Emulation.setDeviceMetricsOverride',{width:1100,height:1100,deviceScaleFactor:1,mobile:false});
  await select(join(downloadDir,'pictures.'+format));await settled();
  await mouseClick(await picturePoint(originalPicture));await waitFor("!document.querySelector('#picture-panel').hidden");

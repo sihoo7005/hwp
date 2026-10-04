@@ -155,17 +155,24 @@ export class PictureEditor {
     e.preventDefault(); e.stopImmediatePropagation();
     if (!p.editable) { this.warn("보호된 셀·머리말·중첩 표의 사진은 보기만 지원합니다."); return; }
     if (this.busy) return;
+    const wasSelected = this.selected?.key === p.key;
     this.select(p);
     const corner = e.target.dataset.corner;
     if (corner && p.props.sizeProtect) { this.warn("크기가 보호된 사진입니다."); return; }
-    this.drag = { p, pt, corner, pointerId: e.pointerId, rect: { x: p.x, y: p.y, w: p.w, h: p.h }, moved: false };
+    if (e.pointerType === "touch" && !wasSelected && !corner) return;
+    // Measure the finger/mouse movement, not layout changes when selection opens the panel or hides the keyboard.
+    this.drag = { p, clientX: e.clientX, clientY: e.clientY,
+      scale: this.pageWidth / this.editor.image.getBoundingClientRect().width,
+      threshold: e.pointerType === "touch" ? 8 : 3, corner, pointerId: e.pointerId,
+      rect: { x: p.x, y: p.y, w: p.w, h: p.h }, moved: false };
     this.editor.surface.setPointerCapture(e.pointerId);
   }
   move(e) {
     if (!this.drag || e.pointerId !== this.drag.pointerId) return;
     e.preventDefault(); e.stopImmediatePropagation();
-    const d = this.drag, pt = this.point(e), dx = pt.x - d.pt.x, dy = pt.y - d.pt.y;
-    d.moved ||= Math.hypot(dx, dy) > 3;
+    const d = this.drag, clientDx = e.clientX - d.clientX, clientDy = e.clientY - d.clientY;
+    const dx = clientDx * d.scale, dy = clientDy * d.scale;
+    d.moved ||= Math.hypot(clientDx, clientDy) > d.threshold;
     if (!d.moved) return;
     if (!d.corner) d.rect = { ...d.rect, x: clamp(d.p.x + dx, 0, Math.max(0, this.pageWidth - d.p.w)),
       y: clamp(d.p.y + dy, 0, Math.max(0, this.pageHeight - d.p.h)) };
