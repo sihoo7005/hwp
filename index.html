@@ -4,15 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>HWP 뷰어와 단어 바꾸기 · 실험판</title>
+  <title>HWP 텍스트 에디터 · 실험판</title>
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
   <main>
     <header>
-      <p class="eyebrow">HWP 뷰어 · 단어 바꾸기</p>
-      <h1>문서를 보고 단어를 바꾸세요.</h1>
-      <p>표·그림·수식과 쪽 배치를 확인하고, 단순 본문의 단어를 바꿔 새 HWP로 내려받으세요.<br>문서 내용과 비밀번호는 브라우저 안에서 처리합니다.</p>
+      <p class="eyebrow">HWP 텍스트 에디터</p>
+      <h1>본문을 직접 수정하세요.</h1>
+      <p>본문을 클릭해 자유롭게 입력·삭제하고, 수정한 문서를 새 파일로 저장하세요.<br>문서 내용과 비밀번호는 브라우저 안에서 처리합니다.</p>
     </header>
 
     <section class="card" aria-labelledby="open-title">
@@ -27,32 +27,21 @@
       </form>
     </section>
 
-    <section class="card" aria-labelledby="replace-title">
-      <h2 id="replace-title"><span class="step">2</span> 단어 바꾸기</h2>
-      <form id="replace-form">
-        <fieldset id="controls" disabled>
-          <div class="fields">
-            <label for="from">찾을 단어<input id="from" type="text" placeholder="서울" autocomplete="off" required maxlength="200" aria-describedby="rule"></label>
-            <label for="to">바꿀 단어<input id="to" type="text" placeholder="부산" autocomplete="off" required maxlength="200" aria-describedby="rule"></label>
-          </div>
-          <p id="rule" class="muted">같은 글자 수의 한글·영문·숫자만 지원합니다. 예: 서울 → 부산. 원본 기준으로 해당 문자열을 모두 바꿉니다.</p>
-          <div class="actions">
-            <button type="submit">치환 결과 보기</button>
-            <button id="download" class="secondary" type="button" disabled>결과 HWP 다운로드</button>
-          </div>
-        </fieldset>
-      </form>
-      <p id="status" role="status" aria-live="polite">파일을 선택하면 본문을 표시합니다.</p>
-    </section>
-
     <section class="card" aria-labelledby="preview-title">
-      <div class="preview-heading"><h2 id="preview-title"><span class="step">3</span> 문서 보기</h2><span id="preview-state" class="muted">원본</span></div>
+      <div class="preview-heading"><h2 id="preview-title"><span class="step">2</span> 문서 편집</h2><span id="preview-state" class="muted">원본</span></div>
       <div class="viewer-toolbar">
-        <label for="view-mode">보기<select id="view-mode" disabled><option value="document">쪽 보기</option><option value="basic">기본 서식</option><option value="text">텍스트</option></select></label>
+        <label for="view-mode">보기<select id="view-mode" disabled><option value="edit">텍스트 편집</option><option value="document">쪽 보기</option><option value="text">전체 텍스트</option></select></label>
         <label for="zoom">확대<select id="zoom" disabled><option value="fit">너비 맞춤</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option></select></label>
-        <label for="document-version">내용<select id="document-version" disabled><option value="original">원본</option><option value="result" disabled>치환 결과</option></select></label>
+
         <span id="view-info" class="muted" aria-live="polite"></span>
       </div>
+      <div class="editor-toolbar actions">
+        <button id="undo" class="secondary" type="button" disabled>실행 취소</button>
+        <button id="redo" class="secondary" type="button" disabled>다시 실행</button>
+        <button id="save" type="button" disabled>수정한 파일 저장</button>
+        <span id="edit-state" class="muted" aria-live="polite"></span>
+      </div>
+      <p id="status" role="status" aria-live="polite">문서를 열면 본문을 직접 수정할 수 있습니다.</p>
       <div id="page-navigation" class="page-navigation" hidden>
         <button id="previous-page" class="secondary" type="button" disabled aria-label="이전 쪽">이전</button>
         <label for="page-number">쪽<input id="page-number" type="number" value="1" min="1" max="1" inputmode="numeric" disabled></label>
@@ -60,13 +49,15 @@
         <button id="next-page" class="secondary" type="button" disabled aria-label="다음 쪽">다음</button>
       </div>
       <p id="viewer-status" class="muted" role="status" aria-live="polite"></p>
-      <div id="preview" class="preview" data-mode="document" tabindex="0" role="region" aria-label="문서 미리보기"><p class="empty">HWP 파일을 열면 여기에 문서가 표시됩니다.</p></div>
+      <div id="text-editor" class="text-editor" role="region" aria-label="본문 텍스트 편집" hidden></div>
+      <div id="preview" class="preview" data-mode="document" tabindex="0" role="region" aria-label="문서 미리보기"><p class="empty">문서를 열면 여기에 표시됩니다.</p></div>
+      <p class="muted">텍스트 편집에서 본문 문단을 수정하세요. 쪽 보기의 본문을 클릭해 해당 문단으로 이동할 수도 있습니다. Enter는 문단 안의 줄바꿈을 넣습니다. 표 셀·그림·수식·머리말 등의 편집은 아직 지원하지 않습니다.</p>
       <p class="muted">쪽 보기에서는 그림·수식·도형·차트, 다단, 머리말·꼬리말·각주와 복잡한 표를 표시합니다. 설치되지 않은 글꼴은 대체되어 줄바꿈과 쪽 수가 달라질 수 있습니다. 일부 개체·구형 형식은 원본과 다르게 표시될 수 있습니다. 텍스트 보기에서는 글을 선택·복사할 수 있습니다.</p>
     </section>
 
     <aside class="notice">
       <strong>저장 호환성을 확인하는 실험판입니다.</strong>
-      <p>보기 지원과 편집 지원은 다릅니다. 치환·저장은 기존처럼 8 MB 이하의 단순 HWP 5.0 본문만 지원합니다. 내려받은 파일은 한글 프로그램에서 직접 열어 확인하세요. DRM·일부 구형 암호 방식·손상 문서는 지원하지 않습니다. 원본 파일은 덮어쓰지 않습니다.</p>
+      <p>텍스트 편집은 8 MB 이하의 일반 HWP 5.0·HWPX 본문에서 지원합니다. 표·그림 등의 개체가 있는 문단은 보호합니다. 실행 취소는 최근 10단계까지 지원하며, 원래 형식의 새 파일로 저장합니다. 편집한 범위의 글자 서식이 단순화될 수 있으므로 내려받은 파일은 한글 프로그램에서 직접 열어 확인하세요. DRM·일부 구형 암호 방식·손상 문서는 지원하지 않습니다. 원본 파일은 덮어쓰지 않습니다.</p>
     </aside>
     <footer>
       <p>본 제품은 한컴의 HWP 문서 파일(.hwp) 공개 문서를 참고하여 개발하였습니다.</p>

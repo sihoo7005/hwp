@@ -1,11 +1,17 @@
-import { mkdir, copyFile, readFile, writeFile } from "node:fs/promises";
+import { mkdir, copyFile, readFile, writeFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+await rm("dist", { recursive: true, force: true });
 await mkdir("dist/vendor", { recursive: true });
-for (const file of ["index.html", "style.css", "app.mjs", "worker.js", "advanced-worker.mjs", "hwp.mjs", "viewer.mjs", "RHWP_THIRD_PARTY_LICENSES.md"]) {
+for (const file of ["style.css", "app.mjs", "advanced-worker.mjs", "editor-core.mjs", "RHWP_THIRD_PARTY_LICENSES.md"]) {
   await copyFile(file, `dist/${file}`);
 }
+const hash = createHash("sha256");
+for (const file of ["app.mjs", "advanced-worker.mjs", "editor-core.mjs", "style.css"]) hash.update(await readFile(file));
+const version = hash.digest("hex").slice(0, 12);
+await writeFile("dist/index.html", (await readFile("index.html", "utf8"))
+  .replace('./app.mjs"', `./app.mjs?v=${version}"`).replace('./style.css"', `./style.css?v=${version}"`));
 for (const [source, target] of [
   ["node_modules/cfb/dist/cfb.min.js", "cfb.min.js"],
-  ["node_modules/pako/dist/pako.min.js", "pako.min.js"],
   ["node_modules/@rhwp/core/rhwp.js", "rhwp.js"],
   ["node_modules/@rhwp/core/rhwp_bg.wasm", "rhwp_bg.wasm"],
 ]) await copyFile(source, `dist/vendor/${target}`);
