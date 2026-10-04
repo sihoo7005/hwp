@@ -223,7 +223,7 @@ if(originalControls.includes('tbl')) {
  assert.equal(await evalJS("document.querySelector('#document-input').value"),originalCellText);
  await evalJS("{const f=document.querySelector('#document-input');f.setSelectionRange(f.value.length,f.value.length)}");
  await call('Input.insertText',{text:' 셀 편집😀'});await settled();assert.match(await svgText(),/셀편집/);
- await evalJS("document.querySelector('#undo').click()");await waitFor("document.querySelector('#save').disabled");await settled();
+ await evalJS("document.querySelector('#undo').click()");await waitFor("document.querySelector('#preview').dataset.revision === '0' && document.querySelector('#save').disabled");await settled();
  assert.equal(await evalJS("document.querySelector('#document-input').value"),originalCellText);
  await evalJS("document.querySelector('#redo').click()");await waitFor("document.querySelector('#document-input').value.includes('셀 편집😀')");await settled();
  assert.match(await evalJS("document.querySelector('#document-input').value"),/셀 편집😀/);

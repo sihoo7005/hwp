@@ -2,7 +2,7 @@
 const { sameParagraph } = await import("./text-address.mjs" + new URL(import.meta.url).search);
 const MAX_TEXT = 200000;
 const MAX_PARAGRAPHS = 5000;
-const HISTORY_LIMIT = 10;
+const HISTORY_LIMIT = 100;
 
 function checked(result) {
   const value = JSON.parse(result);
@@ -55,32 +55,32 @@ export class TextSession {
     this.originalCells = cellShape(doc);
   }
 
-  readParagraphs() {
-    const controls = JSON.parse(this.doc.getControls());
+  readParagraphs(doc = this.doc) {
+    const controls = JSON.parse(doc.getControls());
     const blocked = new Set(controls.filter(c => !["secd", "cold"].includes(c.ctrlId)).map(c => `${c.list}:${c.para}`));
     const paragraphs = [];
     let total = 0;
-    for (let section = 0; section < this.doc.getSectionCount(); section++) {
-      for (let paragraph = 0; paragraph < this.doc.getParagraphCount(section); paragraph++) {
-        const text = this.doc.getTextRange(section, paragraph, 0, this.doc.getParagraphLength(section, paragraph));
+    for (let section = 0; section < doc.getSectionCount(); section++) {
+      for (let paragraph = 0; paragraph < doc.getParagraphCount(section); paragraph++) {
+        const text = doc.getTextRange(section, paragraph, 0, doc.getParagraphLength(section, paragraph));
         total += text.length;
         if (paragraphs.length >= MAX_PARAGRAPHS || total > MAX_TEXT) {
           this.reason ||= "편집 범위인 5천 문단·20만 글자를 넘는 문서입니다.";
           return paragraphs.map(p => ({ ...p, editable: false }));
         }
         // list는 구역 번호와 같지 않을 수 있으므로 위치 기반 제어 문자도 검사합니다.
-        const positions = JSON.parse(this.doc.getControlTextPositions(section, paragraph));
+        const positions = JSON.parse(doc.getControlTextPositions(section, paragraph));
         const metadataOnly = section === 0 && paragraph === 0 && positions.length <= 2 &&
           controls.filter(c => c.list === 0 && c.para === 0).every(c => ["secd", "cold"].includes(c.ctrlId));
         const object = blocked.has(`${section}:${paragraph}`) || (positions.length > 0 && !metadataOnly);
         paragraphs.push({ section, paragraph, text, editable: !this.reason && !object && text.length <= 20000, object });
       }
     }
-    for (const cell of cellShape(this.doc).filter(c => c.hostListId === 0)) {
-      const props = JSON.parse(this.doc.getCellProperties(cell.section, cell.paragraph, cell.control, cell.cell));
+    for (const cell of cellShape(doc).filter(c => c.hostListId === 0)) {
+      const props = JSON.parse(doc.getCellProperties(cell.section, cell.paragraph, cell.control, cell.cell));
       for (let cellParagraph = 0; cellParagraph < cell.paragraphs; cellParagraph++) {
         const address = { section: cell.section, paragraph: cell.paragraph, control: cell.control, cell: cell.cell, cellParagraph };
-        const text = paragraphText(this.doc, address);
+        const text = paragraphText(doc, address);
         total += text.length;
         if (paragraphs.length >= MAX_PARAGRAPHS || total > MAX_TEXT) {
           this.reason ||= "편집 범위인 5천 문단·20만 글자를 넘는 문서입니다.";
@@ -102,7 +102,7 @@ export class TextSession {
   }
 
   trim(stack) {
-    while (stack.length > HISTORY_LIMIT) this.doc.discardSnapshot(stack.shift().snapshot);
+    while (stack.length > HISTORY_LIMIT) stack.shift();
   }
 
   edit(section, paragraph, before, text, cellAddress = {}) {
@@ -120,6 +120,8 @@ export class TextSession {
     let start = 0, end = 0;
     while (start < oldChars.length && start < newChars.length && oldChars[start] === newChars[start]) start++;
     while (end < oldChars.length - start && end < newChars.length - start && oldChars.at(-end - 1) === newChars.at(-end - 1)) end++;
+    // 엔진의 스냅샷 상한(100개)과 별도로 이력을 보관해 복원 중 축출을 막습니다.
+    const history = { bytes: this.capture(), revision: this.revision };
     const snapshot = this.doc.saveSnapshot();
     try {
       const remove = oldChars.length - start - end, insert = newChars.slice(start, newChars.length - end).join("");
@@ -132,9 +134,8 @@ export class TextSession {
       if (paragraphText(this.doc, target) !== text)
         throw new Error("수정한 텍스트를 확인하지 못했습니다.");
       const paragraphs = this.readParagraphs();
-      this.undoStack.push({ snapshot, revision: this.revision });
+      this.undoStack.push(history);
       this.trim(this.undoStack);
-      for (const item of this.redoStack) this.doc.discardSnapshot(item.snapshot);
       this.redoStack = [];
       this.revision = ++this.nextRevision;
       this.paragraphs = paragraphs;
@@ -143,6 +144,7 @@ export class TextSession {
       this.doc.discardSnapshot(snapshot);
       throw error;
     }
+    this.doc.discardSnapshot(snapshot);
     return this.summary();
   }
 
@@ -151,28 +153,34 @@ export class TextSession {
     const from = direction === "undo" ? this.undoStack : this.redoStack;
     const to = direction === "undo" ? this.redoStack : this.undoStack;
     if (!from.length) return this.summary();
-    const current = { snapshot: this.doc.saveSnapshot(), revision: this.revision };
+    const current = { bytes: this.capture(), revision: this.revision };
     const previous = from.at(-1);
-    try { checked(this.doc.restoreSnapshot(previous.snapshot)); }
-    catch (error) { this.doc.discardSnapshot(current.snapshot); throw error; }
+    const restored = new this.doc.constructor(previous.bytes);
+    let paragraphs;
+    try { paragraphs = this.readParagraphs(restored); }
+    catch (error) { restored.free(); throw error; }
+    this.doc.free();
+    this.doc = restored;
     from.pop();
-    this.doc.discardSnapshot(previous.snapshot);
     to.push(current);
     this.trim(to);
     this.revision = previous.revision;
-    this.paragraphs = this.readParagraphs();
+    this.paragraphs = paragraphs;
     return this.summary();
+  }
+
+  capture() {
+    const result = this.format === "hwpx" ? this.doc.exportHwpxWithReport() : this.doc.exportHwpWithReport();
+    try {
+      const loss = JSON.parse(result.contentLoss());
+      if (loss.count || loss.losses?.length) throw new Error(`저장 시 문서 내용이 손실될 수 있어 중단했습니다 (${loss.count}건).`);
+      return result.takeBytes();
+    } finally { result.free(); }
   }
 
   export(HwpDocument) {
     if (this.reason || !this.summary().canEdit) throw new Error(this.reason || "저장할 수 없는 문서입니다.");
-    const result = this.format === "hwpx" ? this.doc.exportHwpxWithReport() : this.doc.exportHwpWithReport();
-    let bytes;
-    try {
-      const loss = JSON.parse(result.contentLoss());
-      if (loss.count || loss.losses?.length) throw new Error(`저장 시 문서 내용이 손실될 수 있어 중단했습니다 (${loss.count}건).`);
-      bytes = result.takeBytes();
-    } finally { result.free(); }
+    const bytes = this.capture();
     const reopened = new HwpDocument(bytes);
     try {
       if (reopened.getSourceFormat() !== this.format || reopened.getTextFileUnicode() !== this.doc.getTextFileUnicode() ||

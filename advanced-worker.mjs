@@ -61,8 +61,10 @@ self.onmessage = ({ data }) => {
         return;
       }
       if (data.type === "edit") session.edit(data.section, data.paragraph, data.before, data.text, data);
-      else if (["undo", "redo"].includes(data.type)) session.history(data.type);
-      else if (data.type === "save") {
+      else if (["undo", "redo"].includes(data.type)) {
+        session.history(data.type);
+        doc = session.doc;
+      } else if (data.type === "save") {
         const saved = session.export(HwpDocument);
         self.postMessage({ id: data.id, type: data.type, ...saved }, [saved.bytes.buffer]);
         return;

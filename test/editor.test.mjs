@@ -20,8 +20,9 @@ for (const format of ["hwp", "hwpx"]) test(`표 셀 에디터: ${format} 병합�
   const bytes = format === "hwp" ? base.exportHwp() : base.exportHwpx();
   base.free();
   const doc = new HwpDocument(bytes);
+  let session;
   try {
-    const session = new TextSession(doc, bytes, { CFB });
+    session = new TextSession(doc, bytes, { CFB });
     const cell = (index, paragraph = 0) => session.paragraphs.find(p => p.paragraph === 3 && p.control === 0 && p.cell === index && p.cellParagraph === paragraph);
     const edit = (p, text) => session.edit(p.section, p.paragraph, p.text, text, p);
     assert.ok(cell(0).editable && cell(1).editable && cell(1, 1).editable);
@@ -40,11 +41,11 @@ for (const format of ["hwp", "hwpx"]) test(`표 셀 에디터: ${format} 병합�
     session.history("undo"); assert.equal(cell(1, 1).text, "같은 셀의 둘째 문단");
     session.history("redo"); assert.equal(cell(1, 1).text, "둘째 문단 수정");
     const revision = session.revision;
-    const realInsert = doc.insertTextInCell;
-    doc.insertTextInCell = () => { throw new Error("삽입 실패"); };
+    const realInsert = session.doc.insertTextInCell;
+    session.doc.insertTextInCell = () => { throw new Error("삽입 실패"); };
     assert.throws(() => edit(cell(0), "실패한 변경"), /삽입 실패/);
-    doc.insertTextInCell = realInsert;
-    assert.equal(doc.getTextInCell(0, 3, 0, 0, 0, 0, 20000), after, "삭제 후 삽입 실패 시 전체 복구");
+    session.doc.insertTextInCell = realInsert;
+    assert.equal(session.doc.getTextInCell(0, 3, 0, 0, 0, 0, 20000), after, "삭제 후 삽입 실패 시 전체 복구");
     assert.equal(session.revision, revision);
     edit(cell(0), ""); assert.equal(cell(0).text, ""); session.history("undo");
     const exported = session.export(HwpDocument);
@@ -57,7 +58,7 @@ for (const format of ["hwp", "hwpx"]) test(`표 셀 에디터: ${format} 병합�
       assert.equal(JSON.parse(reopened.getCellInfo(0, 3, 0, 0)).colSpan, 2);
       assert.equal(reopened.getCellCharPropertiesAt(0, 3, 0, 0, 0, 3), style);
     } finally { reopened.free(); }
-  } finally { doc.free(); }
+  } finally { (session?.doc || doc).free(); }
 });
 
 for (const format of ["hwp", "hwpx"]) test(`텍스트 에디터: ${format} 가변 길이·이모지·줄바꿈 저장, 서식·표 보존과 실행 취소`, () => {
@@ -69,8 +70,9 @@ for (const format of ["hwp", "hwpx"]) test(`텍스트 에디터: ${format} 가�
   const bytes = format === "hwp" ? base.exportHwp() : base.exportHwpx();
   base.free();
   const doc = new HwpDocument(bytes);
+  let session;
   try {
-    const session = new TextSession(doc, bytes, { CFB });
+    session = new TextSession(doc, bytes, { CFB });
     const text = session.paragraphs[0].text;
     const style = doc.getCharPropertiesAt(0, 0, 4);
     const controls = JSON.parse(doc.getControls()).map(c => c.ctrlId);
@@ -89,7 +91,7 @@ for (const format of ["hwp", "hwpx"]) test(`텍스트 에디터: ${format} 가�
     assert.equal(session.paragraphs[0].text, prefixEdited);
     session.history("undo");
     assert.equal(session.paragraphs[0].text, text);
-    assert.equal(doc.getCharPropertiesAt(0, 0, 4), style);
+    assert.equal(session.doc.getCharPropertiesAt(0, 0, 4), style);
     assert.equal(session.summary().dirty, false);
     session.history("redo");
     session.history("redo");
@@ -108,16 +110,16 @@ for (const format of ["hwp", "hwpx"]) test(`텍스트 에디터: ${format} 가�
     assert.equal(session.summary().dirty, true);
     session.edit(0, 0, session.paragraphs[0].text, "다른 내용");
     assert.equal(session.summary().canRedo, false);
-    const realExport = doc.exportHwpWithReport;
+    const realExport = session.doc.exportHwpWithReport;
     if (format === "hwp") {
-      doc.exportHwpWithReport = () => ({ contentLoss: () => '{"count":1,"losses":[{}]}', free() {} });
+      session.doc.exportHwpWithReport = () => ({ contentLoss: () => '{"count":1,"losses":[{}]}', free() {} });
       assert.throws(() => session.export(HwpDocument), /손실/);
-      doc.exportHwpWithReport = realExport;
+      session.doc.exportHwpWithReport = realExport;
     }
-  } finally { doc.free(); }
+  } finally { (session?.doc || doc).free(); }
 });
 
-test("텍스트 에디터: 특수 HWP 편집 제한, 10단계 이력과 빈 문단 복구", () => {
+test("텍스트 에디터: 특수 HWP 편집 제한, 100단계 이력과 빈 문단 복구", () => {
   const doc = new HwpDocument(source);
   try {
     const container = CFB.read(source, { type: "array" });
@@ -129,14 +131,40 @@ test("텍스트 에디터: 특수 HWP 편집 제한, 10단계 이력과 빈 문�
     assert.equal(blocked.summary().canEdit, false);
     assert.throws(() => blocked.edit(0, 0, blocked.paragraphs[0].text, "변경"), /편집할 수 없/);
     assert.throws(() => blocked.export(HwpDocument), /특수 HWP/);
-    const session = new TextSession(doc, source, { CFB });
-    for (let i = 1; i <= 12; i++) session.edit(0, 1, session.paragraphs[1].text, `${i}번째 문장`);
-    assert.equal(session.undoStack.length, 10);
-    for (let i = 0; i < 10; i++) session.history("undo");
-    assert.equal(session.paragraphs[1].text, "2번째 문장");
-    session.edit(0, 1, session.paragraphs[1].text, "");
-    assert.equal(session.paragraphs[1].text, "");
-    session.history("undo");
-    assert.equal(session.paragraphs[1].text, "2번째 문장");
   } finally { doc.free(); }
+  for (const format of ["hwp", "hwpx"]) {
+    const base = new HwpDocument(source);
+    const bytes = format === "hwp" ? source : base.exportHwpx();
+    base.free();
+    const doc = new HwpDocument(bytes);
+    const session = new TextSession(doc, bytes, { CFB });
+    try {
+      for (let i = 1; i <= 102; i++) session.edit(0, 1, session.paragraphs[1].text, `${i}번째 문장`);
+      assert.equal(session.undoStack.length, 100);
+      const realReplace = session.doc.replaceText;
+      session.doc.replaceText = () => { throw new Error("수정 실패"); };
+      assert.throws(() => session.edit(0, 1, session.paragraphs[1].text, "실패"), /수정 실패/);
+      session.doc.replaceText = realReplace;
+      assert.equal(session.undoStack.length, 100, "실패해도 100단계 이력을 유지");
+      assert.equal(session.paragraphs[1].text, "102번째 문장");
+      for (let i = 0; i < 100; i++) session.history("undo");
+      assert.equal(session.paragraphs[1].text, "2번째 문장");
+      assert.equal(session.summary().canUndo, false);
+      assert.equal(session.redoStack.length, 100);
+      session.history("undo");
+      assert.equal(session.paragraphs[1].text, "2번째 문장", "한도를 넘어서 되돌리지 않음");
+      for (let i = 0; i < 100; i++) session.history("redo");
+      assert.equal(session.paragraphs[1].text, "102번째 문장");
+      assert.equal(session.summary().canRedo, false);
+      assert.equal(session.undoStack.length, 100);
+      session.history("redo");
+      assert.equal(session.paragraphs[1].text, "102번째 문장");
+      session.history("undo");
+      session.edit(0, 1, session.paragraphs[1].text, "");
+      assert.equal(session.summary().canRedo, false, "새 수정은 이전 다시 실행 이력을 지움");
+      assert.equal(session.paragraphs[1].text, "");
+      session.history("undo");
+      assert.equal(session.paragraphs[1].text, "101번째 문장");
+    } finally { session.doc.free(); }
+  }
 });
