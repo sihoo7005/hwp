@@ -66,6 +66,72 @@ function fixture({ compressed = false, flags = 0, text = "서울에서 서울을
   return new Uint8Array(CFB.write(cfb, { type: "array", fileType: "cfb" }));
 }
 
+function tableFixture({ cells, nested = false, mutateCell, dimensions, numberedCaption = false } = {}) {
+  const border = new Uint8Array(52), b = new DataView(border.buffer);
+  for (let i = 0; i < 4; i++) {
+    b.setUint8(2 + i * 6, [1, 0, 2, 3][i]);
+    b.setUint8(3 + i * 6, 4); b.setUint32(4 + i * 6, 0xff, true);
+  }
+  b.setUint32(32, 1, true); b.setUint32(36, 0xeeeeff, true);
+  const cfb = CFB.read(fixture({ compressed: true, infoRecords: [record(20, 1, border)] }), { type: "array" });
+  const marker = new Uint8Array(16), m = new DataView(marker.buffer);
+  m.setUint16(0, 11, true); m.setUint32(2, 0x74626c20, true); m.setUint16(14, 11, true);
+  const auto = new Uint8Array(16), a = new DataView(auto.buffer);
+  a.setUint16(0, 18, true); a.setUint32(2, 0x61746e6f, true); a.setUint16(14, 18, true);
+  const paragraph = (text, level, hasTable = false, numbered = false) => {
+    const content = concat([encodeText(numbered ? "표 " : text), ...(numbered ? [auto] : []), ...(hasTable ? [marker, encodeText("뒤")] : []), encodeText("\r")]);
+    const header = new Uint8Array(24), h = new DataView(header.buffer);
+    h.setUint32(0, content.length / 2, true); h.setUint16(12, 1, true);
+    return [record(66, level, header), record(67, level + 1, content), record(68, level + 1, new Uint8Array(8))];
+  };
+  const table = (level, inner = false) => {
+    const header = new Uint8Array(46), h = new DataView(header.buffer);
+    h.setUint32(0, 0x74626c20, true); h.setUint32(4, 1, true); h.setUint32(16, inner ? 3000 : 9000, true);
+    const metadata = new Uint8Array(inner ? 24 : 26), md = new DataView(metadata.buffer);
+    md.setUint16(4, inner ? 1 : dimensions?.[0] ?? 2, true);
+    md.setUint16(6, inner ? 1 : dimensions?.[1] ?? 3, true);
+    md.setUint16(inner ? 20 : 22, 1, true);
+    const caption = new Uint8Array(30), cp = new DataView(caption.buffer);
+    cp.setUint32(0, 1, true); cp.setUint32(8, 3, true);
+    const parts = [record(71, level, header)];
+    if (!inner) {
+      parts.push(record(72, level + 1, caption), ...paragraph("표 제목", level + 1, false, numberedCaption));
+      if (numberedCaption) {
+        const number = new Uint8Array(16), n = new DataView(number.buffer);
+        n.setUint32(0, 0x61746e6f, true); n.setUint32(4, 4, true); n.setUint16(8, 1, true);
+        parts.push(record(71, level + 2, number));
+      }
+    }
+    parts.push(record(77, level + 1, metadata));
+    const entries = inner ? [{ row: 0, column: 0, text: ["안쪽 표"] }] : cells || [
+      { row: 0, column: 0, colSpan: 2, text: ["머리", "둘째 줄"] },
+      { row: 0, column: 2, rowSpan: 2, text: ["세로"] },
+      { row: 1, column: 0, text: ["<img src=x>"] },
+      { row: 1, column: 1, text: ["마지막"] },
+    ];
+    entries.forEach((cell, i) => {
+      let payload = new Uint8Array(38), c = new DataView(payload.buffer);
+      c.setUint32(0, cell.text.length, true); c.setUint32(4, 32, true);
+      c.setUint16(8, cell.column, true); c.setUint16(10, cell.row, true);
+      c.setUint16(12, cell.colSpan || 1, true); c.setUint16(14, cell.rowSpan || 1, true);
+      c.setUint32(16, (cell.colSpan || 1) * 3000, true); c.setUint32(20, 1500, true);
+      for (const offset of [24, 26, 28, 30]) c.setUint16(offset, 150, true);
+      c.setUint16(32, 1, true);
+      if (!inner && mutateCell) payload = mutateCell(payload, i) || payload;
+      parts.push(record(72, level + 1, payload));
+      cell.text.forEach((text, j) => {
+        const hasNested = !inner && nested && i === 0 && j === 0;
+        parts.push(...paragraph(text, level + 1, hasNested));
+        if (hasNested) parts.push(...table(level + 2, true));
+      });
+    });
+    return parts;
+  };
+  const body = concat([...paragraph("앞", 0, true), ...table(1), ...paragraph("표 다음 본문", 0)]);
+  CFB.utils.cfb_add(cfb, "/BodyText/Section0", pako.deflateRaw(body));
+  return new Uint8Array(CFB.write(cfb, { type: "array", fileType: "cfb" }));
+}
+
 for (const compressed of [false, true]) test(`${compressed ? "압축" : "비압축"}: 치환·재열기와 원본/다른 스트림 보존`, () => {
   const bytes = fixture({ compressed, controls: true, sections: 2 });
   const original = bytes.slice();
@@ -221,4 +287,66 @@ test("뷰어: 잘린 서식 레코드는 기본 표시, 잘못된 본문 서식 
   new DataView(shape.buffer).setUint32(8, 99999, true);
   assert.throws(() => openHwp(fixture({ charShapes: shape })), /문단 범위/);
   assert.throws(() => openHwp(fixture({ charShapes: new Uint8Array(9) })), /잘렸습니다/);
+});
+
+test("표: 병합·여러 문단·캡션·테두리·배경을 읽고 중복 본문을 숨김", () => {
+  const doc = openHwp(tableFixture());
+  const model = readView(doc), paragraphs = model.sections[0].paragraphs;
+  const table = paragraphs[0].tables[0];
+  assert.equal(doc.editable, false);
+  assert.throws(() => replaceHwp(doc, "머리", "본문"), /본문 확인만/);
+  assert.equal(table.valid, true);
+  assert.deepEqual([table.rows, table.columns, table.cells.length], [2, 3, 4]);
+  assert.equal(paragraphs[0].runs.find(r => r.object).controlId, 0x74626c20);
+  assert.equal(table.cells[0].colSpan, 2);
+  assert.equal(table.cells[1].rowSpan, 2);
+  assert.deepEqual(table.cells[0].paragraphs.map(p => p.text), ["머리", "둘째 줄"]);
+  assert.equal(table.cells[0].align, "middle");
+  assert.deepEqual(table.cells[0].padding, [2, 2, 2, 2]);
+  assert.equal(table.cells[0].border.backgroundColor, "#ffeeee");
+  assert.match(table.cells[0].border.borderLeft, /solid #ff0000$/);
+  assert.match(table.cells[0].border.borderRight, /none #ff0000$/);
+  assert.match(table.cells[0].border.borderTop, /dashed #ff0000$/);
+  assert.match(table.cells[0].border.borderBottom, /dotted #ff0000$/);
+  assert.equal(table.caption.side, 3);
+  assert.equal(table.caption.paragraphs[0].text, "표 제목");
+  assert.deepEqual(paragraphs.filter(p => !p.inTable).map(p => p.text), ["앞[개체]뒤", "표 다음 본문"]);
+});
+
+test("표: 중첩 표와 셀 소속이 다른 본문을 섞지 않음", () => {
+  const model = readView(openHwp(tableFixture({ nested: true })));
+  const outer = model.sections[0].paragraphs[0].tables[0];
+  const parent = outer.cells[0].paragraphs[0], inner = parent.tables[0];
+  assert.equal(outer.valid && inner.valid, true);
+  assert.deepEqual([inner.rows, inner.columns], [1, 1]);
+  assert.equal(inner.cells[0].paragraphs[0].text, "안쪽 표");
+  assert.equal(parent.text, "머리[개체]뒤");
+  assert.deepEqual(outer.cells[0].paragraphs.map(p => p.text), ["머리[개체]뒤", "둘째 줄"]);
+  assert.equal(model.sections[0].paragraphs.filter(p => !p.inTable).length, 2);
+});
+
+test("표: 캡션의 십진 자동번호를 표시하고 원본 제어 문자는 보존", () => {
+  const doc = openHwp(tableFixture({ numberedCaption: true }));
+  const model = readView(doc);
+  const caption = model.sections[0].paragraphs[0].tables[0].caption.paragraphs[0];
+  assert.equal(caption.text, "표 1");
+  assert.equal(caption.runs.find(r => r.controlId === 0x61746e6f).object, false);
+  assert.equal(doc.paragraphs[1].text, "표 [개체]");
+});
+
+test("표: 잘린 셀·겹친 병합·범위 초과·거대한 격자는 본문 텍스트로 표시", () => {
+  const cases = [
+    { mutateCell: (bytes, i) => i ? bytes : bytes.subarray(0, 31) },
+    { mutateCell: (bytes, i) => { if (i === 1) new DataView(bytes.buffer).setUint16(8, 0, true); } },
+    { mutateCell: (bytes, i) => { if (!i) new DataView(bytes.buffer).setUint16(12, 9999, true); } },
+    { mutateCell: (bytes, i) => { if (!i) new DataView(bytes.buffer).setUint32(0, 9999, true); } },
+    { dimensions: [65535, 65535] },
+  ];
+  for (const options of cases) {
+    const doc = openHwp(tableFixture(options));
+    const model = readView(doc), paragraphs = model.sections[0].paragraphs;
+    assert.equal(paragraphs[0].tables[0].valid, false);
+    assert.ok(paragraphs.every(p => !p.inTable));
+    assert.deepEqual(paragraphs.map(p => p.text), doc.paragraphs.map(p => p.text));
+  }
 });

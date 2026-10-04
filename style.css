@@ -40,6 +40,11 @@ input:focus-visible, button:focus-visible, a:focus-visible, select:focus-visible
 .preview[data-mode=text] { background: #fbfcfe; }
 .document-text .document-paragraph { margin-bottom: 12px; }
 .nested-paragraph { border-left: 2px solid #d6dde7; padding-left: 8px; }
+.table-block { max-width: 100%; }
+.document-table { max-width: 100%; table-layout: fixed; font: inherit; }
+.document-table td { overflow-wrap: anywhere; }
+.document-table .nested-paragraph { border: 0; padding-left: 0; }
+.document-table caption { padding: 4px 0; text-align: left; }
 .object-placeholder { border: 1px dashed #bec9d7; padding: 0 3px; border-radius: 3px; }
 .preview .empty { color: #647184; padding: 24px 0; text-align: center; }
 mark { color: inherit; background: #fff1aa; border-radius: 2px; }

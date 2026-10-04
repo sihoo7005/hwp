@@ -92,7 +92,8 @@ function textRuns(bytes, record) {
     const value = code === 9 ? "\t" : code === 10 ? "\n" : code === 24 ? "-" :
       code === 30 || code === 31 ? " " : code !== 2 && code !== 13 ? "[개체]" : "";
     if (value) displayRuns.push({ position: (offset - record.offset) / 2, length: size / 2,
-      text: value, control: true, object: value === "[개체]" });
+      text: value, control: true, object: value === "[개체]",
+      ...(size === 16 && value === "[개체]" ? { controlId: data.getUint32(offset + 2, true) } : {}) });
     text += value;
     offset += size;
   }
