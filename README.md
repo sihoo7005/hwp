@@ -39,7 +39,15 @@ npm run serve
 
 ## GitHub Pages 배포
 
-`npm run build`로 생성한 `dist/`가 배포할 정적 사이트 전체입니다. GitHub Actions에서 의존성 설치·테스트·빌드 후 이 폴더를 Pages 산출물로 업로드하면 됩니다. 이번 버전은 로컬 구현이며 GitHub 저장소 생성이나 외부 배포는 수행하지 않습니다.
+`npm run build`로 생성한 `dist/`가 배포할 정적 사이트 전체입니다. `.github/workflows/pages.yml`은 `main`에 푸시할 때 의존성을 설치하고 테스트·빌드해 배포 산출물을 만듭니다. 저장소의 Actions 변수 `PAGES_ENABLED`가 `true`이면 이어서 GitHub Pages에 배포합니다. 원본 HWP와 참고 PDF는 웹사이트 배포 산출물에 포함하지 않습니다.
+
+GitHub 저장소의 **Settings → Pages → Source**는 **GitHub Actions**로 설정합니다. GitHub Free에서는 공개 저장소에 Pages를 사용할 수 있고, 비공개 저장소에서는 지원되는 유료 요금제가 필요합니다. [GitHub 공식 안내](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages)
+
+Pages를 활성화한 뒤 **Settings → Secrets and variables → Actions → Variables**에서 `PAGES_ENABLED=true`를 설정합니다. **Actions → Test and deploy website → Run workflow**로 첫 배포를 시작할 수 있고, 이후 `main`에 푸시하면 자동 배포합니다.
+
+2026-10-04 현재 Pages 활성화 API는 이 비공개 저장소에 대해 “Your current plan does not support GitHub Pages for this repository”라고 응답했습니다. 저장소 공개 전환 또는 지원 요금제 사용을 결정하기 전까지 배포는 비활성 상태이며 테스트·빌드는 실행됩니다.
+
+배포 성공 후 기본 주소는 `https://sihoo7005.github.io/hwp/`입니다. GitHub Actions의 워크플로 실행 결과에서 실제 배포 상태를 확인하세요.
 
 전체 개발 계획은 [HWP_WEB_PLAN.md](./HWP_WEB_PLAN.md)에 있습니다.
 
