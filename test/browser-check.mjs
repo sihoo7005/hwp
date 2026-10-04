@@ -20,7 +20,7 @@ await call('Emulation.setDeviceMetricsOverride',{width:1100,height:1100,deviceSc
 await call('Page.navigate',{url:'about:blank'});
 await waitFor("location.href==='about:blank'");
 await call('Page.navigate',{url:process.argv[2] || 'http://127.0.0.1:8765/'});
-await waitFor("document.querySelector('#file') && document.querySelector('#status') && document.readyState === 'complete'");
+await waitFor("document.querySelector('.empty-document button[data-open-file]') && document.querySelector('#status') && document.readyState === 'complete'");
 await new Promise(resolve=>setTimeout(resolve,300));
 assert.ok(await evalJS("document.querySelector('.empty-document button[data-open-file]') !== null"));
 assert.equal(await evalJS("document.documentElement.scrollHeight <= window.innerHeight"),true,'app fills viewport without outer scrolling');
