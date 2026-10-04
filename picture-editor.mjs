@@ -36,8 +36,9 @@ export async function readPicture(blob, crop = null, source = null) {
 }
 
 export class PictureEditor {
-  constructor(pageEditor, { change, warn, resize }) {
+  constructor(pageEditor, { change, warn, resize, selection }) {
     this.editor = pageEditor; this.change = change; this.warn = warn; this.resize = resize;
+    this.selection = selection;
     this.panel = document.querySelector("#picture-panel");
     this.frame = document.createElement("div"); this.frame.className = "picture-frame"; this.frame.tabIndex = 0;
     this.frame.setAttribute("role", "group"); this.frame.setAttribute("aria-label", "선택한 사진. 방향키로 이동, Delete로 삭제, Escape로 선택 해제");
@@ -96,7 +97,7 @@ export class PictureEditor {
     $("picture-delete").addEventListener("click", () => this.change("delete"));
   }
 
-  reset() { this.selected = null; this.pictures = []; this.drag = null; this.pendingSelection = null; this.panel.hidden = true; this.frame.hidden = true; }
+  reset() { this.selected = null; this.pictures = []; this.drag = null; this.pendingSelection = null; this.panel.hidden = true; this.frame.hidden = true; this.selection?.(null); }
   show(data) {
     this.pictures = data.pictures || []; this.page = data.page; this.revision = data.revision;
     this.pageWidth = Number(this.editor.image.dataset.width); this.pageHeight = Number(this.editor.surface.style.height.replace("px", ""));
@@ -125,6 +126,7 @@ export class PictureEditor {
       if (focus) this.frame.focus({ preventScroll: true });
     }
     this.setBusy(this.busy); this.paint();
+    this.selection?.(p);
     if (wasHidden !== this.panel.hidden) this.resize();
   }
   point(e) {

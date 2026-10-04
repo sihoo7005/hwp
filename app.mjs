@@ -3,6 +3,7 @@ const $ = selector => document.querySelector(selector);
 const fileInput = $("#file"), viewMode = $("#view-mode"), preview = $("#preview");
 const status = $("#status"), pageNumber = $("#page-number"), zoom = $("#zoom");
 const undo = $("#undo"), redo = $("#redo"), save = $("#save");
+const menuTabs = [...document.querySelectorAll('.menu-tabs [role="tab"]')];
 const drafts = new Map(), composing = new Set(), requests = new Map();
 let worker, state, sourceBytes, currentFile, imageUrl, pageCache;
 let nextId = 0, generation = 0, pageRequest = 0, editTimer, flushing, actionBusy = false;
@@ -26,8 +27,69 @@ const pageEditor = new PageEditor({
   follow() { if (state && viewMode.value === "document") renderView(true); },
   warn(text) { message(text); }
 });
-pictureEditor = new PictureEditor(pageEditor, { change: pictureAction, warn: message, resize: adjustZoom });
+pictureEditor = new PictureEditor(pageEditor, { change: pictureAction, warn: message, resize: adjustZoom, selection: pictureSelection });
 pageEditor.image.onerror = () => { if (preview.contains(pageEditor.image)) message("쪽 이미지를 표시하지 못했습니다. 텍스트 보기를 이용하세요.", true); };
+
+function selectMenu(tab, focus = false) {
+  for (const item of menuTabs) {
+    const selected = item === tab;
+    item.setAttribute("aria-selected", String(selected));
+    item.tabIndex = selected ? 0 : -1;
+    $(`#${item.getAttribute("aria-controls")}`).hidden = !selected;
+  }
+  if (focus) tab.focus();
+}
+$(".menu-tabs").addEventListener("click", event => {
+  const tab = event.target.closest('[role="tab"]');
+  if (tab) selectMenu(tab);
+});
+$(".menu-tabs").addEventListener("keydown", event => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  const tabs = menuTabs.filter(tab => !tab.hidden), index = tabs.indexOf(document.activeElement);
+  if (index < 0) return;
+  event.preventDefault();
+  const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 :
+    (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+  selectMenu(tabs[next], true);
+});
+function syncRibbon() {
+  for (const button of document.querySelectorAll("[data-command]")) {
+    const source = $(`#${button.dataset.command}`);
+    button.disabled = source.disabled || !!source.closest("#picture-panel")?.hidden;
+  }
+  for (const button of document.querySelectorAll("[data-view]")) button.disabled = viewMode.disabled;
+  for (const button of document.querySelectorAll("[data-zoom]")) button.disabled = zoom.disabled;
+  $("#toggle-ruler").disabled = zoom.disabled;
+}
+function pictureSelection(picture) {
+  const tab = $("#tab-picture"), wasHidden = tab.hidden;
+  tab.hidden = !picture;
+  $("#inspector-context").textContent = picture ? "그림" : "문서";
+  if (picture && wasHidden) selectMenu(tab);
+  else if (!picture && tab.getAttribute("aria-selected") === "true") selectMenu($("#tab-edit"));
+  syncRibbon();
+}
+function updateRuler() {
+  const image = preview.querySelector(".page-image"), strip = $("#ruler-strip");
+  strip.hidden = !image || viewMode.value !== "document" || $("#toggle-ruler").getAttribute("aria-pressed") !== "true";
+  if (strip.hidden) return;
+  const box = image.getBoundingClientRect(), width = Number(image.dataset.width), scale = box.width / width;
+  const ruler = $("#page-ruler"), mm = 96 / 25.4 * scale;
+  ruler.style.width = `${box.width}px`;
+  ruler.style.marginLeft = `${box.left - strip.getBoundingClientRect().left}px`;
+  ruler.style.setProperty("--ruler-step", `${10 * mm}px`);
+  ruler.replaceChildren();
+  for (let value = 20; value * mm < box.width; value += 20) {
+    const label = document.createElement("span"); label.textContent = value;
+    label.style.left = `${value * mm}px`; ruler.append(label);
+  }
+}
+preview.addEventListener("scroll", updateRuler, { passive: true });
+$("#toggle-ruler").addEventListener("click", event => {
+  const button = event.currentTarget;
+  button.setAttribute("aria-pressed", String(button.getAttribute("aria-pressed") !== "true"));
+  updateRuler();
+});
 
 function message(text, error = false) {
   status.textContent = text;
@@ -69,6 +131,11 @@ function updateButtons() {
   pageEditor.input.readOnly = busy;
   pictureEditor?.setBusy(busy);
   $("#edit-state").textContent = !state ? "" : hasUnsaved() ? "저장하지 않은 변경" : "변경 없음";
+  $("#inspector-file").textContent = currentFile?.name || "열린 문서가 없습니다.";
+  $("#inspector-format").textContent = state?.format.toUpperCase() || "—";
+  $("#inspector-pages").textContent = state ? `${state.pages}쪽` : "—";
+  $("#inspector-edit").textContent = !state ? "문서 대기" : !state.canEdit ? "보기 전용" : hasUnsaved() ? "저장하지 않은 변경" : "변경 없음";
+  syncRibbon();
 }
 
 function updateState(data, followCaret = true) {
@@ -107,7 +174,7 @@ async function flushDrafts() {
 function releaseImage() { if (imageUrl) URL.revokeObjectURL(imageUrl); imageUrl = null; }
 function adjustZoom() {
   const image = preview.querySelector(".page-image");
-  if (!image) { $("#view-info").textContent = state && viewMode.value === "text" ? "텍스트 보기" : ""; return; }
+  if (!image) { $("#view-info").textContent = state && viewMode.value === "text" ? "텍스트 보기" : ""; updateRuler(); return; }
   const width = Number(image.dataset.width);
   const style = getComputedStyle(preview);
   const available = preview.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
@@ -115,6 +182,7 @@ function adjustZoom() {
   pageEditor.surface.style.zoom = scale;
   pictureEditor?.paint();
   $("#view-info").textContent = `문서 ${state?.canEdit ? "편집" : "보기"} · ${Math.round(scale * 100)}%`;
+  updateRuler();
 }
 
 function showPage(data) {
@@ -141,13 +209,14 @@ function updateNavigation() {
   $("#previous-page").disabled = !state || Number(pageNumber.value) <= 1;
   $("#next-page").disabled = !state || Number(pageNumber.value) >= state.pages;
   $("#page-total").textContent = state ? `/ ${state.pages}쪽` : "";
+  syncRibbon();
 }
 
 function renderView(followCaret = false) {
   const token = ++pageRequest, epoch = generation;
   updateNavigation();
   preview.dataset.empty = String(!state);
-  if (!state) { releaseImage(); preview.replaceChildren($("#empty-document").content.cloneNode(true)); $("#view-info").textContent = ""; return; }
+  if (!state) { releaseImage(); preview.replaceChildren($("#empty-document").content.cloneNode(true)); $("#view-info").textContent = ""; updateRuler(); return; }
   preview.dataset.mode = viewMode.value;
   if (viewMode.value === "text") {
     pictureEditor.select(null);
@@ -230,7 +299,12 @@ function chooseFile(file) {
 }
 fileInput.addEventListener("change", () => chooseFile(fileInput.files[0]));
 document.addEventListener("click", event => {
-  if (event.target.closest("[data-open-file]")) fileInput.click();
+  const button = event.target.closest("button");
+  if (!button || button.disabled) return;
+  if (button.hasAttribute("data-open-file")) fileInput.click();
+  else if (button.dataset.command) $(`#${button.dataset.command}`).click();
+  else if (button.dataset.view) { viewMode.value = button.dataset.view; viewMode.dispatchEvent(new Event("change")); }
+  else if (button.dataset.zoom) { zoom.value = button.dataset.zoom; zoom.dispatchEvent(new Event("change")); }
 });
 $("#help").addEventListener("click", () => $("#help-dialog").showModal());
 window.addEventListener("dragover", event => {

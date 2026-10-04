@@ -14,6 +14,14 @@
         <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h6"/></svg></span>
         <span class="brand-name">HWP <b>에디터</b></span>
       </div>
+      <div class="quick-tools" aria-label="빠른 실행 도구">
+        <input id="file" type="file" accept=".hwp,.hwpx,.hml,.owpml,.xml" hidden>
+        <button id="open-file" class="icon-button" type="button" data-open-file aria-label="문서 열기" title="문서 열기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5h6l2 2h10v3M3 7v13h16l3-10H7L3 20"/></svg></button>
+        <button id="save" class="icon-button" type="button" disabled aria-label="수정한 파일 저장" title="수정한 파일 저장 (Ctrl/Cmd+S)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l4 4v14H3V3h2M7 3v6h10V3M7 21v-8h10v8"/></svg></button>
+        <button id="undo" class="icon-button" type="button" disabled aria-label="실행 취소" title="실행 취소 (Ctrl/Cmd+Z)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 4-5 5 5 5M3 9h11a7 7 0 0 1 0 14" transform="translate(0 -2)"/></svg></button>
+        <button id="redo" class="icon-button" type="button" disabled aria-label="다시 실행" title="다시 실행 (Ctrl/Cmd+Shift+Z)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 4 5 5-5 5M21 9H10a7 7 0 0 0 0 14" transform="translate(0 -2)"/></svg></button>
+        <button id="picture-add" class="icon-button" type="button" disabled aria-label="사진 추가" title="사진 추가. 커서가 없으면 현재 쪽의 첫 편집 가능 위치에 추가"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg></button>
+      </div>
       <div class="document-heading">
         <h1 id="document-title" title="문서를 열어 주세요">문서를 열어 주세요</h1>
         <span id="preview-state" class="state-badge">원본</span>
@@ -21,27 +29,77 @@
       </div>
       <button id="help" class="icon-button" type="button" aria-label="사용 안내" title="사용 안내"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4M12 16h.01"/></svg></button>
     </header>
-    <nav class="toolbar" aria-label="문서 도구">
-      <input id="file" type="file" accept=".hwp,.hwpx,.hml,.owpml,.xml" hidden>
-      <div class="tool-group file-tools">
-        <button id="open-file" class="tool-button" type="button" data-open-file title="문서 열기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5h6l2 2h10v3M3 7v13h16l3-10H7L3 20"/></svg><span>열기</span></button>
-        <button id="save" class="tool-button primary" type="button" disabled title="수정한 파일 저장 (Ctrl/Cmd+S)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 15v6h16v-6"/></svg><span>저장</span></button>
+    <div class="editor-tools">
+      <nav class="menu-tabs" role="tablist" aria-label="편집 메뉴">
+        <button id="tab-file" role="tab" type="button" aria-selected="false" aria-controls="ribbon-file" tabindex="-1">파일</button>
+        <button id="tab-edit" role="tab" type="button" aria-selected="true" aria-controls="ribbon-edit">편집</button>
+        <button id="tab-insert" role="tab" type="button" aria-selected="false" aria-controls="ribbon-insert" tabindex="-1">입력</button>
+        <button id="tab-view" role="tab" type="button" aria-selected="false" aria-controls="ribbon-view" tabindex="-1">보기</button>
+        <button id="tab-picture" class="context-tab" role="tab" type="button" aria-selected="false" aria-controls="ribbon-picture" tabindex="-1" hidden>그림</button>
+        <span class="menu-caption">문서 편집</span>
+      </nav>
+      <div class="toolbar">
+        <section id="ribbon-file" class="ribbon-panel" role="tabpanel" aria-labelledby="tab-file" hidden>
+          <div class="ribbon-group"><div class="ribbon-actions">
+            <button class="ribbon-button" type="button" data-open-file><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5h6l2 2h10v3M3 7v13h16l3-10H7L3 20"/></svg><span>불러오기</span></button>
+            <button class="ribbon-button" type="button" data-command="save" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l4 4v14H3V3h2M7 3v6h10V3M7 21v-8h10v8"/></svg><span>수정본 저장</span></button>
+          </div><span class="group-label">문서</span></div>
+          <div class="ribbon-group"><div class="ribbon-actions"><button class="ribbon-button" type="button" data-command="help"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v7M12 7h.01"/></svg><span>문서 정보</span></button></div><span class="group-label">정보</span></div>
+          <div class="ribbon-note"><strong>원본 형식으로 저장</strong><span>수정한 문서는 새 파일로 내려받습니다.</span></div>
+        </section>
+        <section id="ribbon-edit" class="ribbon-panel" role="tabpanel" aria-labelledby="tab-edit">
+          <div class="ribbon-group"><div class="ribbon-actions">
+            <button class="ribbon-button" type="button" data-command="undo" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 4-5 5 5 5M3 9h11a7 7 0 0 1 0 14" transform="translate(0 -2)"/></svg><span>실행 취소</span></button>
+            <button class="ribbon-button" type="button" data-command="redo" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 4 5 5-5 5M21 9H10a7 7 0 0 0 0 14" transform="translate(0 -2)"/></svg><span>다시 실행</span></button>
+          </div><span class="group-label">편집 이력</span></div>
+          <div class="ribbon-group"><div class="ribbon-actions">
+            <input id="picture-file" type="file" accept="image/*" hidden>
+            <button class="ribbon-button" type="button" data-command="picture-add" disabled title="커서 위치에 사진 추가"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg><span>사진 추가</span></button>
+          </div><span class="group-label">삽입</span></div>
+          <div class="ribbon-group"><div class="ribbon-actions"><button class="ribbon-button" type="button" data-view="text" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 10h16M4 15h16M4 20h10"/></svg><span>전체 텍스트</span></button></div><span class="group-label">텍스트</span></div>
+          <div class="ribbon-note"><strong>문서 위에서 바로 편집</strong><span>본문이나 표 셀의 글자를 클릭하세요.</span></div>
+        </section>
+        <section id="ribbon-insert" class="ribbon-panel" role="tabpanel" aria-labelledby="tab-insert" hidden>
+          <div class="ribbon-group"><div class="ribbon-actions"><button class="ribbon-button" type="button" data-command="picture-add" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg><span>사진 넣기</span></button></div><span class="group-label">그림</span></div>
+          <div class="ribbon-note"><strong>커서 위치에 사진 넣기</strong><span>이미지를 붙여넣거나 문서에 끌어 놓을 수도 있습니다.</span></div>
+        </section>
+        <section id="ribbon-view" class="ribbon-panel" role="tabpanel" aria-labelledby="tab-view" hidden>
+          <div class="ribbon-group"><div class="ribbon-actions">
+            <button class="ribbon-button" type="button" data-view="document" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6zM9 12h6M9 16h6"/></svg><span>쪽 화면</span></button>
+            <button class="ribbon-button" type="button" data-view="text" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 10h16M4 15h16M4 20h10"/></svg><span>전체 텍스트</span></button>
+          </div><span class="group-label">문서 보기</span></div>
+          <div class="ribbon-group"><div class="ribbon-actions">
+            <button class="ribbon-button" type="button" data-zoom="fit" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5v14M21 5v14M4 12h16m-12-4-4 4 4 4m8-8 4 4-4 4"/></svg><span>너비 맞춤</span></button>
+            <button class="ribbon-button" type="button" data-zoom="1" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></svg><span>100%</span></button>
+          </div><span class="group-label">확대 / 축소</span></div>
+          <div class="ribbon-group"><div class="ribbon-actions"><button id="toggle-ruler" class="ribbon-button" type="button" aria-pressed="true" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v10H3zM7 7v5M12 7v3M17 7v5"/></svg><span>눈금자</span></button></div><span class="group-label">표시</span></div>
+        </section>
+        <section id="ribbon-picture" class="ribbon-panel" role="tabpanel" aria-labelledby="tab-picture" hidden>
+          <div class="ribbon-group"><div class="ribbon-actions">
+            <button class="ribbon-button" type="button" data-command="picture-replace" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m3 17 5-5 4 4 4-6 5 7M7 7h4m-2-2 2 2-2 2"/></svg><span>그림 바꾸기</span></button>
+            <button class="ribbon-button" type="button" data-command="picture-delete" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg><span>삭제</span></button>
+          </div><span class="group-label">그림</span></div>
+          <div class="ribbon-group"><div class="ribbon-actions">
+            <button class="ribbon-button" type="button" data-command="picture-rotate-left" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 3-5 5 5 5M3 8h9a7 7 0 1 1-6 10"/></svg><span>왼쪽 회전</span></button>
+            <button class="ribbon-button" type="button" data-command="picture-rotate-right" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 3 5 5-5 5M21 8h-9a7 7 0 1 0 6 10"/></svg><span>오른쪽 회전</span></button>
+          </div><span class="group-label">회전</span></div>
+          <div class="ribbon-group"><div class="ribbon-actions"><button class="ribbon-button" type="button" data-command="picture-close" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg><span>선택 해제</span></button></div><span class="group-label">선택</span></div>
+          <div class="ribbon-note"><strong>그림 속성</strong><span>속성 창에서 크기·배치·자르기를 조절하세요.</span></div>
+        </section>
       </div>
-      <div class="tool-group history-tools">
-        <button id="undo" class="icon-button" type="button" disabled aria-label="실행 취소" title="실행 취소 (Ctrl/Cmd+Z)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 4-5 5 5 5M3 9h11a7 7 0 0 1 0 14" transform="translate(0 -2)"/></svg></button>
-        <button id="redo" class="icon-button" type="button" disabled aria-label="다시 실행" title="다시 실행 (Ctrl/Cmd+Shift+Z)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 4 5 5-5 5M21 9H10a7 7 0 0 0 0 14" transform="translate(0 -2)"/></svg></button>
-      </div>
-      <div class="tool-group picture-tools">
-        <input id="picture-file" type="file" accept="image/*" hidden>
-        <button id="picture-add" class="tool-button" type="button" disabled title="커서 위치에 사진 추가. 커서가 없으면 현재 쪽의 첫 편집 가능 위치에 추가"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg><span>사진 추가</span></button>
-      </div>
-      <div class="tool-group view-tools">
-        <label class="select-tool" for="view-mode"><span class="sr-only">보기</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6zM9 12h6M9 16h6"/></svg><select id="view-mode" disabled><option value="document">문서 편집</option><option value="text">전체 텍스트</option></select></label>
-        <label class="select-tool zoom-tool" for="zoom"><span class="sr-only">확대</span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6M7 10h6M10 7v6"/></svg><select id="zoom" disabled><option value="fit">너비 맞춤</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option></select></label>
-      </div>
-    </nav>
+    </div>
     <section class="workspace" aria-label="문서 작업 영역">
+      <div id="ruler-strip" class="ruler-strip" aria-hidden="true" hidden><div id="page-ruler" class="page-ruler"></div><span class="ruler-unit">mm</span></div>
       <div id="preview" class="preview" data-mode="document" data-empty="true" tabindex="0" role="region" aria-label="문서 편집 및 보기"></div>
+      <aside class="inspector" aria-label="문서 및 개체 속성">
+        <div class="inspector-heading"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h16M8 3v4M16 10v4M10 17v4"/></svg><strong>속성</strong><span id="inspector-context">문서</span></div>
+        <section class="document-inspector">
+          <h2>문서 정보</h2>
+          <p id="inspector-file" class="inspector-filename">열린 문서가 없습니다.</p>
+          <dl class="inspector-details"><div><dt>파일 형식</dt><dd id="inspector-format">—</dd></div><div><dt>전체 쪽</dt><dd id="inspector-pages">—</dd></div><div><dt>문서 상태</dt><dd id="inspector-edit">문서 대기</dd></div></dl>
+          <button type="button" class="inspector-info" data-command="help">문서 정보 및 사용 안내 ↗</button>
+          <div class="inspector-guide"><h3>선택하고 편집하기</h3><p>본문·표 셀의 글자를 클릭하면 입력할 수 있습니다.</p><p>사진을 선택하면 크기와 배치를 조절하는 도구가 나타납니다.</p></div>
+        </section>
       <aside id="picture-panel" class="picture-panel" aria-label="선택한 사진 편집" hidden>
         <div class="picture-panel-heading"><strong>사진 편집</strong><button id="picture-close" type="button" aria-label="사진 선택 해제">닫기</button></div>
         <div class="picture-actions"><button id="picture-replace" type="button">사진 교체</button><button id="picture-delete" type="button">삭제</button></div>
@@ -56,6 +114,7 @@
         <form id="picture-position"><fieldset><legend>쪽 위 위치</legend><div class="picture-fields"><label>왼쪽에서 (mm)<input id="picture-x" type="number" min="0" max="1000" step="0.1" required></label><label>위에서 (mm)<input id="picture-y" type="number" min="0" max="1000" step="0.1" required></label></div><button type="submit">위치 적용</button></fieldset></form>
         <form id="picture-crop"><fieldset><legend>자르기</legend><p>각 방향에서 잘라낼 비율입니다.</p><div class="picture-fields"><label>왼쪽 (%)<input id="picture-crop-left" type="number" min="0" max="99" step="1" value="0" required></label><label>위 (%)<input id="picture-crop-top" type="number" min="0" max="99" step="1" value="0" required></label><label>오른쪽 (%)<input id="picture-crop-right" type="number" min="0" max="99" step="1" value="0" required></label><label>아래 (%)<input id="picture-crop-bottom" type="number" min="0" max="99" step="1" value="0" required></label></div><button type="submit">자르기 적용</button><p>원래 사진으로 돌아가려면 실행 취소를 누르세요.</p></fieldset></form>
         <p class="picture-hint">모서리를 끌어 크기를 조절하고 사진을 끌어 이동하세요. 모바일에서는 먼저 터치해 선택한 뒤 다시 끌어 이동합니다. 방향키로 미세 이동할 수 있습니다.</p>
+      </aside>
       </aside>
       <div class="drop-overlay" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6"/></svg><strong>문서를 놓아 열기</strong></div>
       <form id="password-form" class="password-panel" hidden>
@@ -76,6 +135,10 @@
         <button id="next-page" class="icon-button" type="button" disabled aria-label="다음 쪽" title="다음 쪽"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg></button>
       </div>
       <span id="view-info" class="muted" aria-live="polite"></span>
+      <div class="view-tools">
+        <label class="select-tool" for="view-mode"><span class="sr-only">보기</span><select id="view-mode" disabled><option value="document">문서 편집</option><option value="text">전체 텍스트</option></select></label>
+        <label class="select-tool zoom-tool" for="zoom"><span class="sr-only">확대</span><select id="zoom" disabled><option value="fit">너비 맞춤</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option></select></label>
+      </div>
     </footer>
   </main>
   <template id="empty-document">
