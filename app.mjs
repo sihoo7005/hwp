@@ -7,14 +7,15 @@ const drafts = new Map(), composing = new Set(), requests = new Map();
 let worker, state, sourceBytes, currentFile, imageUrl, pageCache;
 let nextId = 0, generation = 0, pageRequest = 0, editTimer, flushing, actionBusy = false;
 const { PageEditor } = await import("./page-editor.mjs" + new URL(import.meta.url).search);
+const { paragraphKey, sameParagraph } = await import("./text-address.mjs" + new URL(import.meta.url).search);
 const pageEditor = new PageEditor({
   change(draft, isComposing) {
-    drafts.set(`${draft.section}:${draft.paragraph}`, draft);
+    drafts.set(paragraphKey(draft), draft);
     updateButtons(); clearTimeout(editTimer);
     if (!isComposing && !composing.size) editTimer = setTimeout(() => flushDrafts().catch(e => message(e.message, true)), 60);
   },
   composition(active, paragraph) {
-    const key = `${paragraph.section}:${paragraph.paragraph}`;
+    const key = paragraphKey(paragraph);
     if (active) { composing.add(key); clearTimeout(editTimer); } else composing.delete(key);
     updateButtons();
   },
@@ -71,7 +72,7 @@ function updateState(data, followCaret = true) {
   viewMode.querySelector('[value="document"]').textContent = state.canEdit ? "문서 편집" : "문서 보기";
   $("#preview-state").textContent = state.revision === 0 ? "원본" : state.dirty ? "수정 중" : "저장한 수정본";
   $("#viewer-status").textContent = `${state.format.toUpperCase()} · ${state.pages}쪽${state.warnings ? ` · 서식 검사 안내 ${state.warnings}건` : ''}${state.unsupported ? ` · 미지원 HML 요소 ${state.unsupported}건` : ''}${state.truncated ? ' · 전체 텍스트는 처음 20만 글자까지 표시' : ''}`;
-  $("#document-properties").textContent = `${$("#viewer-status").textContent} · ${state.canEdit ? "본문 편집 가능" : state.reason || "보기 전용"}`;
+  $("#document-properties").textContent = `${$("#viewer-status").textContent} · ${state.canEdit ? "본문·표 셀 편집 가능" : state.reason || "보기 전용"}`;
   updateButtons();
   renderView(followCaret);
 }
@@ -84,7 +85,7 @@ async function flushDrafts() {
   const job = (async () => {
     while (drafts.size && epoch === generation) {
       const [key, draft] = drafts.entries().next().value;
-      const before = state.paragraphs.find(p => p.section === draft.section && p.paragraph === draft.paragraph)?.text;
+      const before = state.paragraphs.find(p => sameParagraph(p, draft))?.text;
       const data = await request("edit", { ...draft, before });
       if (epoch !== generation) return;
       if (drafts.get(key) === draft) drafts.delete(key);
@@ -172,10 +173,10 @@ async function loadFile(file, secret = "") {
   $("#password-form").hidden = true;
   $("#password").value = "";
   updateButtons(); renderView();
-  if (!file) { $("#file-info").textContent = "파일을 선택하세요."; message("문서를 열면 본문을 직접 수정할 수 있습니다."); return; }
+  if (!file) { $("#file-info").textContent = "파일을 선택하세요."; message("문서를 열면 본문과 표 셀을 직접 수정할 수 있습니다."); return; }
   $("#file-info").textContent = `${file.name} · ${(file.size / 1024).toFixed(1)} KB`;
   if (file.size > 32 * 1024 * 1024) { message("파일 크기는 최대 32 MB입니다.", true); return; }
-  message("문서와 편집할 본문을 읽고 있습니다…");
+  message("문서와 편집할 텍스트를 읽고 있습니다…");
   try {
     const bytes = await file.arrayBuffer();
     if (epoch !== generation) return;
@@ -200,7 +201,7 @@ async function loadFile(file, secret = "") {
     const data = await request("open", { bytes: copy, password: secret }, [copy]);
     if (epoch !== generation) return;
     updateState(data, false);
-    message(data.canEdit ? "문서의 글자를 클릭해 바로 입력·삭제하세요. 수정한 파일 저장으로 내려받을 수 있습니다." : data.reason || "본문 편집은 지원하지 않는 문서입니다. 쪽 보기로 확인하세요.");
+    message(data.canEdit ? "문서의 글자를 클릭해 바로 입력·삭제하세요. 수정한 파일 저장으로 내려받을 수 있습니다." : data.reason || "텍스트 편집은 지원하지 않는 문서입니다. 쪽 보기로 확인하세요.");
   } catch (error) {
     if (epoch !== generation) return;
     $("#password-form").hidden = !error.passwordRequired;

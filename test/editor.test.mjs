@@ -7,6 +7,59 @@ import { TextSession } from "../editor-core.mjs";
 await init({ module_or_path: readFileSync(new URL("../node_modules/@rhwp/core/rhwp_bg.wasm", import.meta.url)) });
 const source = readFileSync(new URL("../hwp file for test.hwp", import.meta.url));
 
+for (const format of ["hwp", "hwpx"]) test(`표 셀 에디터: ${format} 병합·빈 셀·여러 문단·서식·이력·저장과 실패 복구`, () => {
+  const base = new HwpDocument(source);
+  assert.ok(JSON.parse(base.createTable(0, 3, 0, 2, 3)).ok);
+  assert.ok(JSON.parse(base.mergeTableCells(0, 3, 0, 0, 0, 0, 1)).ok);
+  base.insertTextInCell(0, 3, 0, 0, 0, 0, "가나다라");
+  base.applyCharFormatInCell(0, 3, 0, 0, 0, 2, 4, JSON.stringify({ bold: true }));
+  base.splitParagraphInCell(0, 3, 0, 1, 0, 0);
+  base.insertTextInCell(0, 3, 0, 1, 1, 0, "같은 셀의 둘째 문단");
+  base.setCellProperties(0, 3, 0, 2, JSON.stringify({ cellProtect: true }));
+  base.insertClickHereFieldInCell(0, 3, 0, 3, 0, 0, false, "입력", "", "field", true);
+  const bytes = format === "hwp" ? base.exportHwp() : base.exportHwpx();
+  base.free();
+  const doc = new HwpDocument(bytes);
+  try {
+    const session = new TextSession(doc, bytes, { CFB });
+    const cell = (index, paragraph = 0) => session.paragraphs.find(p => p.paragraph === 3 && p.control === 0 && p.cell === index && p.cellParagraph === paragraph);
+    const edit = (p, text) => session.edit(p.section, p.paragraph, p.text, text, p);
+    assert.ok(cell(0).editable && cell(1).editable && cell(1, 1).editable);
+    assert.equal(cell(2).editable, false, "보호 셀은 수정하지 않음");
+    assert.equal(cell(3).editable, false, "필드 등 개체가 있는 셀 문단은 수정하지 않음");
+    assert.throws(() => edit(cell(2), "보호 해제"), /편집할 수 없/);
+    assert.throws(() => session.edit(0, 3, cell(0).text, "본문으로 잘못 요청"), /편집할 수 없/);
+    const style = doc.getCellCharPropertiesAt(0, 3, 0, 0, 0, 2);
+    edit(cell(0), "😀가나다라");
+    assert.equal(doc.getCellCharPropertiesAt(0, 3, 0, 0, 0, 3), style);
+    const after = "😀가나다라\n셀 안 줄바꿈\tABC";
+    edit(cell(0), after);
+    edit(cell(1), "빈 셀도 입력😀");
+    edit(cell(1, 1), "둘째 문단 수정");
+    assert.equal(cell(0).text, after, "같은 셀의 다른 문단과 옆 셀의 수정은 분리");
+    session.history("undo"); assert.equal(cell(1, 1).text, "같은 셀의 둘째 문단");
+    session.history("redo"); assert.equal(cell(1, 1).text, "둘째 문단 수정");
+    const revision = session.revision;
+    const realInsert = doc.insertTextInCell;
+    doc.insertTextInCell = () => { throw new Error("삽입 실패"); };
+    assert.throws(() => edit(cell(0), "실패한 변경"), /삽입 실패/);
+    doc.insertTextInCell = realInsert;
+    assert.equal(doc.getTextInCell(0, 3, 0, 0, 0, 0, 20000), after, "삭제 후 삽입 실패 시 전체 복구");
+    assert.equal(session.revision, revision);
+    edit(cell(0), ""); assert.equal(cell(0).text, ""); session.history("undo");
+    const exported = session.export(HwpDocument);
+    const reopened = new HwpDocument(exported.bytes);
+    try {
+      assert.equal(reopened.getTextInCell(0, 3, 0, 0, 0, 0, 20000), after);
+      assert.equal(reopened.getCellParagraphCount(0, 3, 0, 1), 2);
+      assert.equal(reopened.getTextInCell(0, 3, 0, 1, 0, 0, 20000), "빈 셀도 입력😀");
+      assert.equal(reopened.getTextInCell(0, 3, 0, 1, 1, 0, 20000), "둘째 문단 수정");
+      assert.equal(JSON.parse(reopened.getCellInfo(0, 3, 0, 0)).colSpan, 2);
+      assert.equal(reopened.getCellCharPropertiesAt(0, 3, 0, 0, 0, 3), style);
+    } finally { reopened.free(); }
+  } finally { doc.free(); }
+});
+
 for (const format of ["hwp", "hwpx"]) test(`텍스트 에디터: ${format} 가변 길이·이모지·줄바꿈 저장, 서식·표 보존과 실행 취소`, () => {
   const base = new HwpDocument(source);
   base.applyCharFormat(0, 0, 3, 7, JSON.stringify({ bold: true }));

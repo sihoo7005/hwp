@@ -1,6 +1,7 @@
 // 문서·비밀번호·편집 이력은 이 Worker 안에서만 처리합니다.
 importScripts("./vendor/cfb.min.js");
-const ready = Promise.all([import("./vendor/rhwp.js"), import("./editor-core.mjs" + new URL(self.location.href).search)]);
+const ready = Promise.all([import("./vendor/rhwp.js"), import("./editor-core.mjs" + new URL(self.location.href).search),
+  import("./text-address.mjs" + new URL(self.location.href).search)]);
 if (typeof OffscreenCanvas !== "undefined") {
   const context = new OffscreenCanvas(1, 1).getContext("2d");
   if (context) self.measureTextWidth = (font, text) => { context.font = font; return context.measureText(text).width; };
@@ -13,7 +14,7 @@ let queue = Promise.resolve();
 self.onmessage = ({ data }) => {
   queue = queue.then(async () => {
     try {
-      const [{ default: init, HwpDocument }, { TextSession }] = await ready;
+      const [{ default: init, HwpDocument }, { TextSession }, { paragraphKey, runAddress, sameParagraph }] = await ready;
       await (initialized ||= init());
       if (data.type === "open") {
         if (!(data.bytes instanceof ArrayBuffer) || data.bytes.byteLength > 32 * 1024 * 1024)
@@ -30,19 +31,36 @@ self.onmessage = ({ data }) => {
       if (data.type === "page") {
         if (!Number.isInteger(data.page) || data.page < 0 || data.page >= doc.pageCount()) throw new Error("표시할 쪽을 찾을 수 없습니다.");
         let page = data.page;
-        if (data.followCaret && data.caret && session.paragraphs.some(p => p.editable && p.section === data.caret.section && p.paragraph === data.caret.paragraph)) {
-          const cursor = JSON.parse(doc.getCursorRect(data.caret.section, data.caret.paragraph, data.caret.offset));
+        if (data.followCaret && data.caret && session.paragraphs.some(p => p.editable && sameParagraph(p, data.caret))) {
+          const c = data.caret;
+          const cursor = JSON.parse(c.control === undefined ? doc.getCursorRect(c.section, c.paragraph, c.offset) :
+            doc.getCursorRectInCell(c.section, c.paragraph, c.control, c.cell, c.cellParagraph, c.offset));
           if (Number.isInteger(cursor?.pageIndex) && cursor.pageIndex >= 0 && cursor.pageIndex < doc.pageCount()) page = cursor.pageIndex;
         }
         const svg = doc.renderPageSvg(page);
         if (svg.length > 16 * 1024 * 1024) throw new Error("이 쪽의 그림·개체가 표시 한도를 넘었습니다.");
         const runs = JSON.parse(doc.getPageTextLayout(page)).runs || [];
-        const editable = new Set(session.paragraphs.filter(p => p.editable).map(p => `${p.section}:${p.paragraph}`));
+        const editable = new Set(session.paragraphs.filter(p => p.editable).map(paragraphKey));
+        const tables = new Map();
+        const pageRuns = runs.slice(0, 5000).map(r => {
+          const address = runAddress(r);
+          let cellBounds;
+          if (address?.control !== undefined && editable.has(paragraphKey(address))) {
+            const table = `${address.section}:${address.paragraph}:${address.control}`;
+            if (!tables.has(table)) tables.set(table, JSON.parse(doc.getTableCellBboxes(address.section,
+              address.paragraph, address.control, page)));
+            // Header tables can expose the same paragraph indices. Only the body cell's own fragment is editable.
+            cellBounds = tables.get(table).find(b => b.cellIdx === address.cell && b.pageIndex === page &&
+              r.x >= b.x - 2 && r.x <= b.x + b.w + 2 && r.y >= b.y - 2 && r.y <= b.y + b.h + 2);
+          }
+          return { ...r, cellBounds, editable: !!address && editable.has(paragraphKey(address)) &&
+            (address.control === undefined || !!cellBounds) };
+        });
         self.postMessage({ id: data.id, type: data.type, page, revision: session.revision, svg,
-          runs: runs.slice(0, 5000).map(r => ({ ...r, editable: r.parentParaIdx === undefined && editable.has(`${r.secIdx}:${r.paraIdx}`) })) });
+          runs: pageRuns });
         return;
       }
-      if (data.type === "edit") session.edit(data.section, data.paragraph, data.before, data.text);
+      if (data.type === "edit") session.edit(data.section, data.paragraph, data.before, data.text, data);
       else if (["undo", "redo"].includes(data.type)) session.history(data.type);
       else if (data.type === "save") {
         const saved = session.export(HwpDocument);

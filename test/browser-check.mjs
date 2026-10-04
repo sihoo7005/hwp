@@ -153,20 +153,64 @@ for(const name of ['HWP3-password-123456.hwp','HWP5-password-123456.hwpx','hwp3-
 const distribution=join(projectDir,'한글문서파일형식_배포용문서_revision1.2.hwp');
 if(existsSync(distribution)){await select(distribution);await mode('document');assert.match(await svg(),/<text /);assert.equal(await evalJS("document.querySelector('#save').disabled"),true);}
 
+// Edit adjacent cells, IME, blank space and an empty merged cell in both saved formats.
+const cellBase=new HwpDocument(readFileSync(sampleDir+'plain.hwp'));
+cellBase.insertParagraph(0,3);cellBase.createTable(0,3,0,2,3);cellBase.mergeTableCells(0,3,0,1,0,1,1);
+cellBase.insertTextInCell(0,3,0,0,0,0,'첫셀');cellBase.insertTextInCell(0,3,0,1,0,0,'옆셀');
+const cellBoxes=JSON.parse(cellBase.getTableCellBboxes(0,3,0,0));
+for(const format of ['hwp','hwpx'])writeFileSync(join(downloadDir,'cells.'+format),format==='hwp'?cellBase.exportHwp():cellBase.exportHwpx());cellBase.free();
+async function clickCell(index,blank=false,touch=false){
+ const b=cellBoxes.find(c=>c.cellIdx===index);
+ const point=await evalJS(`(()=>{const image=document.querySelector('.page-image'),box=image.getBoundingClientRect(),scale=box.width/Number(image.dataset.width);return {x:box.left+${b.x+(blank?b.w-20:10)}*scale,y:box.top+${b.y+b.h/2}*scale}})()`);
+ if(touch){await call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...point,id:1}]});await call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}
+ else{await call('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',clickCount:1});await call('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1});}
+ await waitFor(`document.activeElement.id==='document-input' && document.activeElement.dataset.cell==='${index}'`);
+}
+for(const format of ['hwp','hwpx']){
+ await select(join(downloadDir,'cells.'+format));await settled();
+ await clickCell(0,true);assert.equal(await evalJS("document.querySelector('#document-input').value"),'첫셀');
+ await evalJS("{window.cellInput=document.activeElement;const f=document.activeElement;f.dispatchEvent(new CompositionEvent('compositionstart'));f.value='첫셀 한글😀';f.setSelectionRange(f.value.length,f.value.length);f.dispatchEvent(new InputEvent('input',{bubbles:true,isComposing:true,data:'글'}))}");
+ await evalJS('new Promise(r=>setTimeout(r,150))');assert.equal(await evalJS("document.querySelector('#preview-state').textContent"),'원본');
+ await evalJS("document.activeElement.dispatchEvent(new CompositionEvent('compositionend'))");await settled();
+ assert.equal(await evalJS('document.activeElement===cellInput'),true);assert.match(await svgText(),/첫셀한글/);
+ await clickCell(1);assert.equal(await evalJS("document.querySelector('#document-input').value"),'옆셀');
+ await call('Input.insertText',{text:'옆칸 입력'});await settled();
+ await clickCell(3,true);assert.equal(await evalJS("document.querySelector('#document-input').value"),'');
+ await call('Input.insertText',{text:'병합 빈셀😀\n둘째 줄'});await settled();
+ await evalJS("document.querySelector('#save').click()");await waitFor("document.querySelector('#status').textContent.includes('다운로드를 시작')");
+ const saved=join(downloadDir,'cells_수정.'+format);for(let i=0;i<40&&!existsSync(saved);i++)await new Promise(r=>setTimeout(r,100));assert.ok(existsSync(saved));
+ const check=new HwpDocument(readFileSync(saved));assert.equal(check.getTextInCell(0,3,0,0,0,0,20000),'첫셀 한글😀');assert.match(check.getTextInCell(0,3,0,1,0,0,20000),/옆칸 입력/);assert.equal(check.getTextInCell(0,3,0,3,0,0,20000),'병합 빈셀😀\n둘째 줄');assert.equal(JSON.parse(check.getCellInfo(0,3,0,3)).colSpan,2);check.free();
+ await select(saved);await settled();assert.match(await svgText(),/병합빈셀/);
+ await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});await call('Emulation.setTouchEmulationEnabled',{enabled:true});
+ await clickCell(1,false,true);await call('Input.insertText',{text:' 터치 입력'});await settled();assert.match(await svgText(),/터치입력/);
+ assert.equal(await evalJS('document.documentElement.scrollWidth<=window.innerWidth'),true);
+ await call('Emulation.setTouchEmulationEnabled',{enabled:false});await call('Emulation.setDeviceMetricsOverride',{width:1100,height:1100,deviceScaleFactor:1,mobile:false});
+ console.log('PASS table editing:',format,'IME, adjacent/empty/merged cells, save/reopen, touch');
+}
+
 await select(join(projectDir,'hwp file for test.hwp'));
 const originalDoc=new HwpDocument(readFileSync(join(projectDir,'hwp file for test.hwp')));
-const originalControls=JSON.parse(originalDoc.getControls()).map(c=>c.ctrlId);originalDoc.free();
+const originalControls=JSON.parse(originalDoc.getControls()).map(c=>c.ctrlId);
+const firstCell=JSON.parse(originalDoc.getCursorModel()).lists.find(c=>c.isCell&&c.hostListId===0);
+const originalCellText=firstCell ? originalDoc.getTextInCell(firstCell.sectionIndex,firstCell.hostPara,firstCell.controlIndex,firstCell.cellIndex,0,0,20000) : '';originalDoc.free();
 await settled();
 if(originalControls.includes('tbl')) {
  const cellPoint=await linePoint(3);await call('Input.dispatchMouseEvent',{type:'mousePressed',...cellPoint,button:'left',clickCount:1});await call('Input.dispatchMouseEvent',{type:'mouseReleased',...cellPoint,button:'left',clickCount:1});
- assert.match(await evalJS("document.querySelector('#status').textContent"),/보기만/);
- assert.equal(await evalJS("document.querySelector('#save').disabled"),true);
+ assert.equal(await evalJS("document.querySelector('#document-input').dataset.cell"),String(firstCell.cellIndex));
+ assert.equal(await evalJS("document.querySelector('#document-input').value"),originalCellText);
+ await evalJS("{const f=document.querySelector('#document-input');f.setSelectionRange(f.value.length,f.value.length)}");
+ await call('Input.insertText',{text:' 셀 편집😀'});await settled();assert.match(await svgText(),/셀편집/);
+ await evalJS("document.querySelector('#undo').click()");await waitFor("document.querySelector('#save').disabled");await settled();
+ assert.equal(await evalJS("document.querySelector('#document-input').value"),originalCellText);
+ await evalJS("document.querySelector('#redo').click()");await waitFor("document.querySelector('#document-input').value.includes('셀 편집😀')");await settled();
+ assert.match(await evalJS("document.querySelector('#document-input').value"),/셀 편집😀/);
 }
 await clickLine();
 await evalJS("{const f=document.querySelector('#document-input');f.value+=' 본문 편집 테스트';f.dispatchEvent(new InputEvent('input',{bubbles:true}));document.querySelector('#save').click()}");
 await waitFor("document.querySelector('#status').textContent.includes('다운로드를 시작')");
 const tableDownload=join(downloadDir,'hwp file for test_수정.hwp');for(let i=0;i<40&&!existsSync(tableDownload);i++)await new Promise(r=>setTimeout(r,100));assert.ok(existsSync(tableDownload));
-const editedTableDoc=new HwpDocument(readFileSync(tableDownload));assert.match(editedTableDoc.getTextRange(0,0,0,editedTableDoc.getParagraphLength(0,0)),/본문 편집 테스트/);assert.deepEqual(JSON.parse(editedTableDoc.getControls()).map(c=>c.ctrlId),originalControls);editedTableDoc.free();
+const editedTableDoc=new HwpDocument(readFileSync(tableDownload));assert.match(editedTableDoc.getTextRange(0,0,0,editedTableDoc.getParagraphLength(0,0)),/본문 편집 테스트/);assert.deepEqual(JSON.parse(editedTableDoc.getControls()).map(c=>c.ctrlId),originalControls);
+if(firstCell)assert.equal(editedTableDoc.getTextInCell(firstCell.sectionIndex,firstCell.hostPara,firstCell.controlIndex,firstCell.cellIndex,0,0,20000),originalCellText+' 셀 편집😀');editedTableDoc.free();
 const editorShot=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});writeFileSync(join(downloadDir,'editor.png'),Buffer.from(editorShot.data,'base64'));
 await mode('document');assert.match(await svgText(),/서울은/);
 
@@ -214,4 +258,4 @@ const drm=sampleDir+'drm.hwp';writeFileSync(drm,Buffer.from('SCDSA004protected')
 assert.equal(await evalJS("document.querySelector('#password-form').hidden"),true);
 await select(sampleDir+'plain.hwp');await mode('document');assert.match(await svgText(),/서울은/);
 assert.deepEqual(exceptions,[]);
-console.log('PASS: paginated HWP/HWPX/HML/HWP3; images/equations/charts/shapes; notes/header samples; protected files/wrong password; distribution files; navigation; safe image rendering; on-page editing/IME/caret/selection/keyboard; undo/redo; variable-length save/reopen; pending edits at save; click-to-edit; mobile zoom; no exceptions');console.log('Downloads and screenshots:',downloadDir);ws.close();
+console.log('PASS: paginated HWP/HWPX/HML/HWP3; images/equations/charts/shapes; notes/header samples; protected files/wrong password; distribution files; navigation; safe image rendering; on-page body and table cell editing/IME/caret/selection/keyboard; undo/redo; variable-length save/reopen; pending edits at save; click-to-edit; mobile zoom; no exceptions');console.log('Downloads and screenshots:',downloadDir);ws.close();

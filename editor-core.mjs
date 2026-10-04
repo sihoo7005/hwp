@@ -1,4 +1,5 @@
-// 본문 텍스트 편집과 저장 검증. DOM 없이 Worker와 자동 검사에서 함께 사용합니다.
+// 본문·표 셀 텍스트 편집과 저장 검증. DOM 없이 Worker와 자동 검사에서 함께 사용합니다.
+const { sameParagraph } = await import("./text-address.mjs" + new URL(import.meta.url).search);
 const MAX_TEXT = 200000;
 const MAX_PARAGRAPHS = 5000;
 const HISTORY_LIMIT = 10;
@@ -11,6 +12,20 @@ function checked(result) {
 
 function controlShape(doc) {
   return JSON.parse(doc.getControls()).map(({ ctrlId, list, para, controlIndex }) => ({ ctrlId, list, para, controlIndex }));
+}
+
+function cellShape(doc) {
+  return JSON.parse(doc.getCursorModel()).lists.filter(c => c.isCell).map(c => ({
+    listId: c.listId, hostListId: c.hostListId, section: c.sectionIndex, paragraph: c.hostPara,
+    control: c.controlIndex, cell: c.cellIndex, paragraphs: c.paraCount,
+    row: c.row, col: c.col, rowSpan: c.rowSpan, colSpan: c.colSpan
+  }));
+}
+
+function paragraphText(doc, p) {
+  if (p.control === undefined) return doc.getTextRange(p.section, p.paragraph, 0, doc.getParagraphLength(p.section, p.paragraph));
+  return doc.getTextInCell(p.section, p.paragraph, p.control, p.cell, p.cellParagraph, 0,
+    doc.getCellParagraphLength(p.section, p.paragraph, p.control, p.cell, p.cellParagraph));
 }
 
 export class TextSession {
@@ -37,6 +52,7 @@ export class TextSession {
     } else if (this.format !== "hwpx") this.reason = "이 형식은 이번 버전에서 보기만 지원합니다.";
     this.paragraphs = this.readParagraphs();
     this.originalControls = controlShape(doc);
+    this.originalCells = cellShape(doc);
   }
 
   readParagraphs() {
@@ -60,6 +76,21 @@ export class TextSession {
         paragraphs.push({ section, paragraph, text, editable: !this.reason && !object && text.length <= 20000, object });
       }
     }
+    for (const cell of cellShape(this.doc).filter(c => c.hostListId === 0)) {
+      const props = JSON.parse(this.doc.getCellProperties(cell.section, cell.paragraph, cell.control, cell.cell));
+      for (let cellParagraph = 0; cellParagraph < cell.paragraphs; cellParagraph++) {
+        const address = { section: cell.section, paragraph: cell.paragraph, control: cell.control, cell: cell.cell, cellParagraph };
+        const text = paragraphText(this.doc, address);
+        total += text.length;
+        if (paragraphs.length >= MAX_PARAGRAPHS || total > MAX_TEXT) {
+          this.reason ||= "편집 범위인 5천 문단·20만 글자를 넘는 문서입니다.";
+          return paragraphs.map(p => ({ ...p, editable: false }));
+        }
+        const object = controls.some(c => c.list === cell.listId && c.para === cellParagraph);
+        paragraphs.push({ ...address, text, object, editable: !this.reason && !object && !props.cellProtect &&
+          !props.textDirection && text.length <= 20000 });
+      }
+    }
     return paragraphs;
   }
 
@@ -74,8 +105,8 @@ export class TextSession {
     while (stack.length > HISTORY_LIMIT) this.doc.discardSnapshot(stack.shift().snapshot);
   }
 
-  edit(section, paragraph, before, text) {
-    const target = this.paragraphs.find(p => p.section === section && p.paragraph === paragraph);
+  edit(section, paragraph, before, text, cellAddress = {}) {
+    const target = this.paragraphs.find(p => sameParagraph(p, { ...cellAddress, section, paragraph }));
     if (!target?.editable || this.reason) throw new Error("이 문단은 이번 버전에서 편집할 수 없습니다.");
     if (typeof text !== "string" || text.length > 20000 || /[\x00-\x08\x0b-\x1f\x7f]/.test(text) ||
         Array.from(text).some(c => c.length === 1 && c.charCodeAt(0) >= 0xd800 && c.charCodeAt(0) <= 0xdfff))
@@ -83,7 +114,7 @@ export class TextSession {
     if (target.text !== before) throw new Error("문단이 변경되었습니다. 현재 내용을 다시 확인해 주세요.");
     if (text === before) return this.summary();
     if (this.paragraphs.reduce((n, p) => n + p.text.length, 0) - before.length + text.length > MAX_TEXT)
-      throw new Error("본문 편집은 20만 글자까지 지원합니다.");
+      throw new Error("본문과 표 셀을 합쳐 20만 글자까지 편집할 수 있습니다.");
     // Rust의 문자 위치는 Unicode code point 단위입니다. 이모지의 UTF-16 쌍을 자르지 않습니다.
     const oldChars = Array.from(before), newChars = Array.from(text);
     let start = 0, end = 0;
@@ -91,9 +122,14 @@ export class TextSession {
     while (end < oldChars.length - start && end < newChars.length - start && oldChars.at(-end - 1) === newChars.at(-end - 1)) end++;
     const snapshot = this.doc.saveSnapshot();
     try {
-      checked(this.doc.replaceText(section, paragraph, start, oldChars.length - start - end,
-        newChars.slice(start, newChars.length - end).join("")));
-      if (this.doc.getTextRange(section, paragraph, 0, this.doc.getParagraphLength(section, paragraph)) !== text)
+      const remove = oldChars.length - start - end, insert = newChars.slice(start, newChars.length - end).join("");
+      if (target.control === undefined) checked(this.doc.replaceText(section, paragraph, start, remove, insert));
+      else {
+        const args = [section, paragraph, target.control, target.cell, target.cellParagraph, start];
+        if (remove) checked(this.doc.deleteTextInCell(...args, remove));
+        if (insert) checked(this.doc.insertTextInCell(...args, insert));
+      }
+      if (paragraphText(this.doc, target) !== text)
         throw new Error("수정한 텍스트를 확인하지 못했습니다.");
       const paragraphs = this.readParagraphs();
       this.undoStack.push({ snapshot, revision: this.revision });
@@ -141,6 +177,7 @@ export class TextSession {
     try {
       if (reopened.getSourceFormat() !== this.format || reopened.getTextFileUnicode() !== this.doc.getTextFileUnicode() ||
           JSON.stringify(controlShape(reopened)) !== JSON.stringify(this.originalControls) ||
+          JSON.stringify(cellShape(reopened)) !== JSON.stringify(this.originalCells) ||
           reopened.getSectionCount() !== this.doc.getSectionCount())
         throw new Error("저장 결과에서 텍스트 또는 문서 개체가 달라져 다운로드를 중단했습니다.");
       for (let s = 0; s < this.doc.getSectionCount(); s++) {
@@ -149,6 +186,9 @@ export class TextSession {
           if (reopened.getTextRange(s, p, 0, reopened.getParagraphLength(s, p)) !==
               this.doc.getTextRange(s, p, 0, this.doc.getParagraphLength(s, p))) throw new Error("저장 결과의 본문이 달라졌습니다.");
         }
+      }
+      for (const p of this.paragraphs.filter(p => p.control !== undefined)) {
+        if (paragraphText(reopened, p) !== p.text) throw new Error("저장 결과의 표 셀 내용이 달라졌습니다.");
       }
     } finally { reopened.free(); }
     return { bytes, revision: this.revision, format: this.format };

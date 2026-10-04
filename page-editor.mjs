@@ -1,7 +1,8 @@
+const { paragraphKey, runAddress, sameParagraph } = await import("./text-address.mjs" + new URL(import.meta.url).search);
 const length = text => Array.from(text).length;
 export const toCodePoint = (text, offset) => length(text.slice(0, offset));
 export const toUtf16 = (text, offset) => Array.from(text).slice(0, offset).join("").length;
-const same = (run, p) => run.secIdx === p.section && run.paraIdx === p.paragraph && run.parentParaIdx === undefined;
+const same = (run, p) => run.editable !== false && sameParagraph(runAddress(run), p);
 
 export function offsetAt(run, x) {
   const stops = run.charX || [0];
@@ -11,10 +12,17 @@ export function offsetAt(run, x) {
 }
 
 export function runAtPoint(runs, x, y) {
-  const line = runs.filter(r => y >= r.y - 2 && y <= r.y + r.h + 2);
-  return line.find(r => x >= r.x && x <= r.x + Math.max(1, r.w)) ||
+  const line = runs.filter(r => y >= r.y - 2 && y <= r.y + r.h + 2 &&
+    (!r.cellBounds || (x >= r.cellBounds.x && x <= r.cellBounds.x + r.cellBounds.w)));
+  const hit = line.find(r => x >= r.x && x <= r.x + Math.max(1, r.w)) ||
     line.filter(r => x >= r.x - 3 && x <= r.x + Math.max(12, r.w) + 12)
       .sort((a, b) => Math.min(Math.abs(x - a.x), Math.abs(x - a.x - a.w)) - Math.min(Math.abs(x - b.x), Math.abs(x - b.x - b.w)))[0];
+  if (hit) return hit;
+  // Clicking the blank part of a cell activates the closest line in that cell.
+  return runs.filter(r => r.cellBounds && x >= r.cellBounds.x && x <= r.cellBounds.x + r.cellBounds.w &&
+    y >= r.cellBounds.y && y <= r.cellBounds.y + r.cellBounds.h)
+    .sort((a, b) => Math.abs(y - a.y - a.h / 2) - Math.abs(y - b.y - b.h / 2) ||
+      Math.abs(x - a.x) - Math.abs(x - b.x))[0];
 }
 
 export function caretAt(runs, paragraph, offset) {
@@ -47,7 +55,7 @@ export class PageEditor {
     this.layer = document.createElement("div"); this.layer.className = "document-selection"; this.layer.setAttribute("aria-hidden", "true");
     this.input = document.createElement("textarea");
     this.input.id = "document-input"; this.input.className = "document-input";
-    this.input.setAttribute("aria-label", "문서 본문 편집. 글자를 클릭하거나 방향키로 이동하세요.");
+    this.input.setAttribute("aria-label", "문서 본문과 표 셀 편집. 글자를 클릭하거나 방향키로 이동하세요.");
     this.input.spellcheck = false; this.input.maxLength = 20000; this.input.autocomplete = "off";
     this.surface.append(this.image, this.layer, this.input);
     this.reset();
@@ -113,8 +121,8 @@ export class PageEditor {
   sync(paragraphs, drafts) {
     this.paragraphs = paragraphs; this.drafts = drafts;
     this.input.disabled = !paragraphs.some(p => p.editable);
-    if (this.active && !this.isComposing && !drafts.has(`${this.active.section}:${this.active.paragraph}`)) {
-      const p = paragraphs.find(p => p.section === this.active.section && p.paragraph === this.active.paragraph);
+    if (this.active && !this.isComposing && !drafts.has(paragraphKey(this.active))) {
+      const p = paragraphs.find(p => sameParagraph(p, this.active));
       if (p && this.input.value !== p.text) {
         const start = this.input.selectionStart, end = this.input.selectionEnd, direction = this.input.selectionDirection;
         this.input.value = p.text; this.input.setSelectionRange(start, end, direction);
@@ -128,7 +136,7 @@ export class PageEditor {
     this.surface.style.width = `${width}px`; this.surface.style.height = `${height}px`;
     this.image.dataset.width = width; this.image.dataset.page = data.page; this.image.dataset.revision = data.revision;
     this.image.style.width = `${width}px`; this.image.style.height = `${height}px`;
-    this.image.alt = `${data.page + 1}쪽. 본문을 클릭해 이 문서 위에서 수정하세요.`;
+    this.image.alt = `${data.page + 1}쪽. 본문이나 표 셀을 클릭해 이 문서 위에서 수정하세요.`;
     this.image.src = url;
     this.surface.classList.toggle("editable-page", data.runs.some(r => r.editable));
     this.paint();
@@ -156,19 +164,22 @@ export class PageEditor {
   choose(hit, event, extend = false) {
     if (this.isComposing) return false;
     if (!hit) return false;
-    if (!hit.run.editable) { this.warn("표 셀·그림·머리말 등은 이번 버전에서 보기만 지원합니다."); return false; }
+    if (!hit.run.editable) { this.input.blur(); this.warn("보호된 셀·개체가 있는 문단·중첩 표·머리말 등은 보기만 지원합니다."); return false; }
     this.activate(hit.run, hit.offset, true, extend);
     return true;
   }
 
   activate(run, offset, focus = true, extend = false) {
-    const p = this.paragraphs.find(p => p.section === run.secIdx && p.paragraph === run.paraIdx);
+    const p = this.paragraphs.find(p => same(run, p));
     if (!p?.editable) return;
-    const key = `${p.section}:${p.paragraph}`, current = this.active && same(run, this.active);
+    const key = paragraphKey(p), current = this.active && same(run, this.active);
     const anchor = current && extend ? (this.input.selectionDirection === "backward" ? this.input.selectionEnd : this.input.selectionStart) : null;
     if (!current) this.input.value = this.drafts.get(key)?.text ?? p.text;
-    this.active = { section: p.section, paragraph: p.paragraph };
+    this.active = runAddress(run);
     this.input.dataset.section = p.section; this.input.dataset.paragraph = p.paragraph;
+    for (const name of ["control", "cell", "cellParagraph"]) {
+      if (p[name] === undefined) delete this.input.dataset[name]; else this.input.dataset[name] = p[name];
+    }
     const position = toUtf16(this.input.value, offset);
     this.input.setSelectionRange(anchor === null ? position : Math.min(anchor, position), anchor === null ? position : Math.max(anchor, position), anchor !== null && position < anchor ? "backward" : "forward");
     if (focus) this.input.focus({ preventScroll: true });
@@ -202,11 +213,11 @@ export class PageEditor {
   selectionChanged() {
     this.paint();
     if (!this.active || this.isComposing || document.activeElement !== this.input) return;
-    if (this.drafts.has(`${this.active.section}:${this.active.paragraph}`)) return;
+    if (this.drafts.has(paragraphKey(this.active))) return;
     const runs = this.runs.filter(r => same(r, this.active)), caret = this.caret();
     if (!runs.length) return;
     if (caret.offset >= runs[0].charStart && caret.offset <= runs.at(-1).charStart + length(runs.at(-1).text)) { this.followKey = null; return; }
-    const key = `${caret.section}:${caret.paragraph}:${caret.offset}`;
+    const key = `${paragraphKey(caret)}:${caret.offset}`;
     if (this.followKey !== key) { this.followKey = key; this.follow(); }
   }
 
@@ -228,7 +239,7 @@ export class PageEditor {
       run = candidates[0]; if (run) offset = offsetAt(run, point.x);
     } else if (!event.shiftKey && this.input.selectionStart === this.input.selectionEnd &&
         ((event.key === "ArrowLeft" && caret.offset === 0) || (event.key === "ArrowRight" && caret.offset === length(this.input.value)))) {
-      const current = this.paragraphs.findIndex(p => p.section === this.active.section && p.paragraph === this.active.paragraph);
+      const current = this.paragraphs.findIndex(p => sameParagraph(p, this.active));
       const next = this.paragraphs[current + (event.key === "ArrowLeft" ? -1 : 1)];
       if (next?.editable) {
         const options = this.runs.filter(r => same(r, next));
