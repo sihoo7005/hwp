@@ -1,0 +1,15 @@
+{
+  "name": "hwp-word-replace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test/hwp.test.mjs",
+    "serve": "python -m http.server 8765 --bind 127.0.0.1 --directory dist"
+  },
+  "dependencies": {
+    "cfb": "1.2.2",
+    "pako": "2.1.0"
+  }
+}

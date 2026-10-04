@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>HWP 단어 바꾸기 · 실험판</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">HWP 편집 · 첫 번째 실험</p>
+      <h1>문서의 단어를 바꿔 보세요.</h1>
+      <p>파일을 열고, 같은 길이의 단어로 바꾼 뒤 새 HWP로 내려받으세요.<br>문서 내용은 브라우저 안에서 처리합니다.</p>
+    </header>
+
+    <section class="card" aria-labelledby="open-title">
+      <h2 id="open-title"><span class="step">1</span> HWP 파일 열기</h2>
+      <label for="file">일반 HWP 5.0 문서 · 최대 8 MB</label>
+      <input id="file" type="file" accept=".hwp">
+      <p id="file-info" class="muted">먼저 짧은 본문만 있는 문서로 시험해 보세요.</p>
+    </section>
+
+    <section class="card" aria-labelledby="replace-title">
+      <h2 id="replace-title"><span class="step">2</span> 단어 바꾸기</h2>
+      <form id="replace-form">
+        <fieldset id="controls" disabled>
+          <div class="fields">
+            <label for="from">찾을 단어<input id="from" type="text" placeholder="서울" autocomplete="off" required maxlength="200" aria-describedby="rule"></label>
+            <label for="to">바꿀 단어<input id="to" type="text" placeholder="부산" autocomplete="off" required maxlength="200" aria-describedby="rule"></label>
+          </div>
+          <p id="rule" class="muted">같은 글자 수의 한글·영문·숫자만 지원합니다. 예: 서울 → 부산. 원본 기준으로 해당 문자열을 모두 바꿉니다.</p>
+          <div class="actions">
+            <button type="submit">치환 결과 보기</button>
+            <button id="download" class="secondary" type="button" disabled>결과 HWP 다운로드</button>
+          </div>
+        </fieldset>
+      </form>
+      <p id="status" role="status" aria-live="polite">파일을 선택하면 본문을 표시합니다.</p>
+    </section>
+
+    <section class="card" aria-labelledby="preview-title">
+      <div class="preview-heading"><h2 id="preview-title"><span class="step">3</span> 본문 확인</h2><span id="preview-state" class="muted">원본</span></div>
+      <div id="preview" class="preview"><p class="empty">여기에 문서의 본문이 표시됩니다.</p></div>
+      <p class="muted">이 화면은 본문 텍스트 확인용입니다. 원본의 글꼴과 쪽 배치는 재현하지 않습니다.</p>
+    </section>
+
+    <aside class="notice">
+      <strong>저장 호환성을 확인하는 실험판입니다.</strong>
+      <p>같은 글자 수라도 글자 폭과 줄바꿈이 달라질 수 있습니다. 내려받은 파일은 한글 프로그램에서 직접 열어 확인하세요. 표·그림·수식·필드 등 복잡한 문서는 치환을 제한합니다. 원본 파일은 덮어쓰지 않습니다.</p>
+    </aside>
+    <footer>
+      <p>본 제품은 한컴의 HWP 문서 파일(.hwp) 공개 문서를 참고하여 개발하였습니다.</p>
+      <a href="./THIRD_PARTY_NOTICES.txt">외부 라이브러리 및 고지</a>
+    </footer>
+  </main>
+  <script type="module" src="./app.mjs"></script>
+</body>
+</html>
