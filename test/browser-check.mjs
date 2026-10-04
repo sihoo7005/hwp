@@ -24,6 +24,14 @@ await waitFor("document.querySelector('.empty-document button[data-open-file]') 
 await new Promise(resolve=>setTimeout(resolve,300));
 assert.ok(await evalJS("document.querySelector('.empty-document button[data-open-file]') !== null"));
 assert.equal(await evalJS("document.documentElement.scrollHeight <= window.innerHeight"),true,'app fills viewport without outer scrolling');
+assert.equal(await evalJS("document.querySelector('#inspector').hidden"),true,'properties start closed');
+assert.equal(await evalJS("document.querySelector('#toggle-inspector').getAttribute('aria-expanded')"),'false');
+const closedPreviewWidth=await evalJS("document.querySelector('#preview').clientWidth");
+await clickSelector('#toggle-inspector');
+assert.equal(await evalJS("document.querySelector('#inspector').hidden"),false);
+assert.ok(await evalJS("document.querySelector('#preview').clientWidth")<closedPreviewWidth,'opening properties makes room for the panel');
+await clickSelector('#toggle-inspector');
+assert.equal(await evalJS("document.querySelector('#preview').clientWidth"),closedPreviewWidth,'closing properties restores document width');
 await clickSelector('#tab-file');
 assert.equal(await evalJS("document.querySelector('#ribbon-file').hidden"),false);
 assert.equal(await evalJS("document.querySelector('#ribbon-edit').hidden"),true);
@@ -341,6 +349,7 @@ async function textPoint(text){return await evalJS(`fetch(document.querySelector
 for(const format of ['hwp','hwpx']) {
  await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
  await call('Emulation.setTouchEmulationEnabled',{enabled:true});
+ if(!await evalJS("document.querySelector('#inspector').hidden"))await touchSelector('#toggle-inspector');
  await select(join(downloadDir,'pictures.'+format));await settled();
  const mobilePhotoInput=await call('DOM.querySelector',{nodeId:root.root.nodeId,selector:'#picture-file'});
  await call('Page.setInterceptFileChooserDialog',{enabled:true});
@@ -350,6 +359,9 @@ for(const format of ['hwp','hwpx']) {
  await waitFor("!document.querySelector('#picture-panel').hidden");
  assert.equal(await evalJS("document.querySelector('#tab-picture').getAttribute('aria-selected')"),'true','picture selection opens contextual ribbon');
  assert.equal(await evalJS("document.querySelector('#ribbon-picture [data-command=picture-replace]').disabled"),false);
+ assert.equal(await evalJS("document.querySelector('#inspector').hidden"),true,'picture selection respects closed properties');
+ await touchSelector('#toggle-inspector');
+ assert.equal(await evalJS("document.querySelector('#toggle-inspector').getAttribute('aria-expanded')"),'true');
  assert.ok(await evalJS("(()=>{const panel=document.querySelector('.inspector').getBoundingClientRect(),workspace=document.querySelector('.workspace').getBoundingClientRect();return panel.height>80 && panel.left>=0 && panel.right<=innerWidth && panel.bottom<=workspace.bottom+1})()"),'mobile properties panel remains inside the viewport');
  assert.ok(await evalJS("(()=>{const input=document.querySelector('#picture-width'),b=input.getBoundingClientRect();return document.elementFromPoint(b.left+b.width/2,b.top+b.height/2)===input})()"),'mobile picture size control is visible and touchable');
  assert.equal(await evalJS("document.querySelector('#preview').dataset.revision"),'0','첫 터치는 사진 선택만 한다');
@@ -383,6 +395,13 @@ for(const format of ['hwp','hwpx']) {
  await clickSelector('#tab-file');assert.equal(await evalJS("document.querySelector('#picture-panel').hidden"),false,'menu changes preserve picture selection');
  await clickSelector('#tab-picture');
  assert.equal(await evalJS("document.querySelector('.picture-frame').hidden"),false);
+ const selectedPictureKey=await evalJS("document.querySelector('.picture-frame').dataset.key");
+ await clickSelector('#toggle-inspector');
+ assert.equal(await evalJS("document.querySelector('#inspector').hidden"),true);
+ assert.equal(await evalJS("document.querySelector('.picture-frame').hidden"),false,'closing properties preserves picture selection');
+ await clickSelector('#toggle-inspector');
+ assert.equal(await evalJS("document.querySelector('.picture-frame').dataset.key"),selectedPictureKey);
+ assert.equal(await evalJS("document.querySelector('#preview').dataset.revision"),'0','properties toggle does not edit the document');
  await pictureCommit("{const w=document.querySelector('#picture-width');w.value='60';w.dispatchEvent(new Event('input'));document.querySelector('#picture-size-apply').click()}");
  assert.equal(await evalJS("document.querySelector('#picture-width').value"),'60.0');
  const widthBefore=Number(await evalJS("document.querySelector('#picture-width').value"));

@@ -90,6 +90,14 @@ $("#toggle-ruler").addEventListener("click", event => {
   button.setAttribute("aria-pressed", String(button.getAttribute("aria-pressed") !== "true"));
   updateRuler();
 });
+$("#toggle-inspector").addEventListener("click", event => {
+  const inspector = $("#inspector"), open = inspector.hidden, button = event.currentTarget;
+  inspector.hidden = !open;
+  button.setAttribute("aria-expanded", String(open));
+  button.setAttribute("aria-label", open ? "속성 창 닫기" : "속성 창 열기");
+  button.title = button.getAttribute("aria-label");
+  adjustZoom();
+});
 
 function message(text, error = false) {
   status.textContent = text;
