@@ -29,6 +29,14 @@ input:focus-visible, button:focus-visible, a:focus-visible, select:focus-visible
 .viewer-toolbar label { font-size: .78rem; color: #647184; }
 .viewer-toolbar select { display: block; margin-top: 4px; padding: 8px 10px; font: inherit; font-size: .86rem; color: #172331; background: white; border: 1px solid #bec9d7; border-radius: 6px; }
 .viewer-toolbar select:disabled { opacity: .5; }
+.page-navigation { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.page-navigation[hidden], #password-form[hidden] { display: none; }
+.page-navigation label { display: flex; align-items: center; gap: 8px; }
+.page-navigation input { width: 80px; margin: 0; padding: 7px; }
+.page-navigation button { padding: 7px 12px; }
+#password-form button { margin-top: 12px; }
+.page-image { display: block; }
+.engine-text { white-space: pre-wrap; overflow-wrap: anywhere; font: 1rem/1.8 system-ui, sans-serif; }
 #view-info { margin-left: auto; padding-bottom: 8px; }
 .preview { max-height: 620px; min-height: 200px; overflow: auto; border: 1px solid #d6dde7; border-radius: 8px; padding: 16px; background: #e8edf3; }
 .document-section { margin-bottom: 24px; }

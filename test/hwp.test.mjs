@@ -262,12 +262,14 @@ test("뷰어: 제어 문자 뒤의 서식 경계·언어별 글꼴·문단·가�
   assert.deepEqual(saved.chars, view.chars);
 });
 
-test("뷰어: 실제 테스트 HWP의 A4·11pt·3문단과 서식 없는 문서의 기본 표시", () => {
+test("뷰어: 실제 테스트 HWP의 A4·11pt·본문과 서식 없는 문서의 기본 표시", () => {
   const model = readView(openHwp(readFileSync(new URL("../hwp file for test.hwp", import.meta.url))));
   const section = model.sections[0];
   assert.ok(Math.abs(section.page.width - 793.7) < 1);
   assert.ok(Math.abs(section.page.height - 1122.5) < 1);
-  assert.equal(section.paragraphs.length, 3);
+  assert.deepEqual(section.paragraphs.slice(0, 3).map(p => p.text), [
+    "서울은 대한민국의 수도이다.", "나는 서울에서 출발해 다른 도시로 이동했다.", "서울의 날씨를 확인했다.",
+  ]);
   assert.ok(Math.abs(section.page.top - 132.27) < 1); // 위 여백 + 머리말 영역
   assert.equal(section.paragraphs[0].text, "서울은 대한민국의 수도이다.");
   assert.equal(model.chars[section.paragraphs[0].runs[0].id].size, 11);
