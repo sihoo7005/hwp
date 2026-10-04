@@ -60,7 +60,8 @@ h1 { margin: 0; font-size: 13px; font-weight: 550; overflow: hidden; text-overfl
 @keyframes caret-blink { 50% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .document-caret { animation: none; } }
 .document-input, .document-input:focus-visible { position: absolute; width: 2px; min-height: 16px; padding: 0; margin: 0; border: 0; border-radius: 0; resize: none; font: 16px/1 sans-serif; color: transparent; caret-color: transparent; background: transparent; opacity: .01; overflow: hidden; outline: none; pointer-events: none; }
-.composition-text { position: absolute; white-space: pre; background: white; border-bottom: 1px solid #3067cf; line-height: 1; }
+.composition-mask { position: absolute; background: white; }
+.composition-text { position: absolute; white-space: pre; background: white; line-height: 1; }
 .engine-text { max-width: 850px; margin: 0 auto; padding: 36px; border: 1px solid #e0e5ed; border-radius: 4px; background: white; white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.9 system-ui, sans-serif; box-shadow: 0 2px 8px #27324408; }
 .drop-overlay { position: absolute; inset: 12px; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 16px; border: 2px dashed #5186e4; border-radius: 10px; background: #edf4fff2; color: #3067cf; pointer-events: none; }
 .drop-overlay svg { width: 36px; height: 36px; }

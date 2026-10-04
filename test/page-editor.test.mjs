@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { toCodePoint, toUtf16, offsetAt, runAtPoint, caretAt, selectionRects } from "../page-editor.mjs";
+import { toCodePoint, toUtf16, offsetAt, runAtPoint, caretAt, selectionRects, compositionRange } from "../page-editor.mjs";
 import { paragraphKey, runAddress } from "../text-address.mjs";
 
 test("문서 위 편집: 이모지·서식 구간·줄 나눔의 커서와 선택 좌표", () => {
@@ -48,4 +48,16 @@ test("표 셀 좌표: 같은 문단 번호의 옆 셀·본문·중첩 표와 커
   assert.equal(runAddress(runs[2]), null);
   assert.equal(caretAt(runs, p, 1).x, 220);
   assert.deepEqual(selectionRects(runs, p, 0, 2), [{ x: 210, y: 20, width: 30, height: 15 }]);
+});
+
+
+test("IME 표시: 단어 전체 조합·기존 글자 삭제·같은 단어·이모지·누락된 data의 교체 범위", () => {
+  assert.deepEqual(compositionRange("서울 문서", "서울시 문서", 3, "서울시"), { start: 0, end: 2, text: "서울시" });
+  assert.deepEqual(compositionRange("서울서울", "서울서울시", 5, "서울시"), { start: 2, end: 4, text: "서울시" });
+  assert.deepEqual(compositionRange("단어가 길어요", "단어 길어요", 2, "단어"), { start: 0, end: 3, text: "단어" });
+  assert.deepEqual(compositionRange("😀서울 문서", "😀서울시 문서", 5, "😀서울시"), { start: 0, end: 3, text: "😀서울시" });
+  assert.deepEqual(compositionRange("서울 문서", "서울 문서", 2, "서울"), { start: 0, end: 2, text: "서울" });
+  assert.deepEqual(compositionRange("서울 문서", "부산 문서", 2), { start: 0, end: 2, text: "부산" });
+  assert.deepEqual(compositionRange("서울 문서", " 문서", 0, ""), { start: 0, end: 2, text: "" });
+  assert.equal(compositionRange("서울 문서", "서울 문서", 2), null, "조합 취소 시 원본 표시");
 });

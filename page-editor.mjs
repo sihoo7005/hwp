@@ -43,6 +43,22 @@ export function selectionRects(runs, paragraph, start, end) {
   });
 }
 
+// IMEs can report an entire word, including unchanged letters before the original caret.
+export function compositionRange(original, value, selectionEnd, data = null) {
+  if (typeof data === "string" && data.length) {
+    const start = selectionEnd - data.length, end = original.length - (value.length - selectionEnd);
+    if (start >= 0 && end >= start && value.slice(start, selectionEnd) === data &&
+        original.slice(0, start) === value.slice(0, start) && original.slice(end) === value.slice(selectionEnd))
+      return { start: toCodePoint(original, start), end: toCodePoint(original, end), text: data };
+  }
+  if (original === value) return null;
+  const before = Array.from(original), after = Array.from(value);
+  let start = 0, end = before.length, newEnd = after.length;
+  while (start < end && start < newEnd && before[start] === after[start]) start++;
+  while (end > start && newEnd > start && before[end - 1] === after[newEnd - 1]) { end--; newEnd--; }
+  return { start, end, text: after.slice(start, newEnd).join("") };
+}
+
 // Native textarea handles IME/clipboard; the document engine draws all formatted text.
 export class PageEditor {
   constructor({ change, composition, commit, warn, follow }) {
@@ -59,21 +75,28 @@ export class PageEditor {
     this.input.spellcheck = false; this.input.maxLength = 20000; this.input.autocomplete = "off";
     this.surface.append(this.image, this.layer, this.input);
     this.reset();
+    this.image.addEventListener("load", () => {
+      this.renderedParagraphs = this.pageParagraphs;
+      if (!this.isComposing && this.renderedText() === this.input.value) this.compositionPending = false;
+      this.paint();
+    });
     const changed = event => {
       if (!this.active) return;
-      if (event?.isComposing) this.compositionText = event.data || "";
+      if (event?.isComposing) this.compositionData = event.data;
+      else if (!this.isComposing) this.compositionData = null;
       this.change({ ...this.active, text: this.input.value }, this.isComposing);
       this.paint();
     };
     this.input.addEventListener("input", changed);
     this.input.addEventListener("compositionstart", () => {
       if (!this.active) return;
-      this.isComposing = true; this.compositionText = "";
+      this.isComposing = true; this.compositionData = null; this.compositionPending = false;
       this.compositionOffset = toCodePoint(this.input.value, this.input.selectionStart);
       this.composition(true, this.active);
     });
     this.input.addEventListener("compositionend", () => {
-      this.isComposing = false; this.compositionText = "";
+      this.isComposing = false;
+      this.compositionPending = !!this.active && this.renderedText() !== this.input.value;
       if (this.active) { this.composition(false, this.active); changed(); }
     });
     this.input.addEventListener("focus", () => {
@@ -113,7 +136,8 @@ export class PageEditor {
 
   reset() {
     this.active = null; this.runs = []; this.paragraphs = []; this.drafts = new Map();
-    this.isComposing = false; this.dragging = false; this.compositionText = "";
+    this.isComposing = false; this.dragging = false; this.compositionData = null; this.compositionPending = false;
+    this.renderedParagraphs = []; this.pageParagraphs = [];
     this.followKey = null;
     this.input.value = ""; this.input.disabled = true; this.input.blur(); this.layer.replaceChildren();
   }
@@ -132,7 +156,7 @@ export class PageEditor {
   }
 
   show(data, url, width, height) {
-    this.runs = data.runs; this.page = data.page;
+    this.runs = data.runs; this.page = data.page; this.pageParagraphs = this.paragraphs;
     this.surface.style.width = `${width}px`; this.surface.style.height = `${height}px`;
     this.image.dataset.width = width; this.image.dataset.page = data.page; this.image.dataset.revision = data.revision;
     this.image.style.width = `${width}px`; this.image.style.height = `${height}px`;
@@ -174,7 +198,10 @@ export class PageEditor {
     if (!p?.editable) return;
     const key = paragraphKey(p), current = this.active && same(run, this.active);
     const anchor = current && extend ? (this.input.selectionDirection === "backward" ? this.input.selectionEnd : this.input.selectionStart) : null;
-    if (!current) this.input.value = this.drafts.get(key)?.text ?? p.text;
+    if (!current) {
+      this.input.value = this.drafts.get(key)?.text ?? p.text;
+      this.compositionPending = false; this.compositionData = null;
+    }
     this.active = runAddress(run);
     this.input.dataset.section = p.section; this.input.dataset.paragraph = p.paragraph;
     for (const name of ["control", "cell", "cellParagraph"]) {
@@ -186,10 +213,14 @@ export class PageEditor {
     this.paint();
   }
 
+  renderedText() { return this.renderedParagraphs.find(p => sameParagraph(p, this.active))?.text ?? this.input.value; }
+
   paint() {
     this.layer.replaceChildren();
     if (!this.active) return;
-    const point = caretAt(this.runs, this.active, this.isComposing ? this.compositionOffset : this.caret().offset);
+    const preview = (this.isComposing || this.compositionPending) ?
+      compositionRange(this.renderedText(), this.input.value, this.input.selectionEnd, this.compositionData) : null;
+    const point = caretAt(this.runs, this.active, preview?.start ?? (this.isComposing ? this.compositionOffset : this.caret().offset));
     if (!point) return;
     this.input.style.left = `${point.x}px`; this.input.style.top = `${point.y}px`;
     this.input.style.height = `${Math.max(16, point.height)}px`;
@@ -203,10 +234,17 @@ export class PageEditor {
     const cursor = document.createElement("div"); cursor.className = "document-caret";
     Object.assign(cursor.style, { left: `${point.x}px`, top: `${point.y}px`, height: `${point.height}px` });
     this.layer.append(cursor);
-    if (this.isComposing && this.compositionText) {
-      const text = document.createElement("span"); text.className = "composition-text"; text.textContent = this.compositionText;
+    if (preview) {
+      for (const r of selectionRects(this.runs, this.active, preview.start, preview.end)) {
+        const mask = document.createElement("div"); mask.className = "composition-mask";
+        Object.assign(mask.style, { left: `${r.x - 1}px`, top: `${r.y - 1}px`, width: `${r.width + 2}px`, height: `${r.height + 2}px` });
+        this.layer.append(mask);
+      }
+      const text = document.createElement("span"); text.className = "composition-text"; text.textContent = preview.text;
       Object.assign(text.style, { left: `${point.x}px`, top: `${point.y}px`, fontFamily: point.run.fontFamily, fontSize: `${point.run.fontSize}px`, fontWeight: point.run.bold ? "bold" : "normal", fontStyle: point.run.italic ? "italic" : "normal", color: point.run.textColor });
       this.layer.append(text);
+      cursor.style.left = `${point.x + text.offsetWidth}px`;
+      this.layer.append(cursor);
     }
   }
 

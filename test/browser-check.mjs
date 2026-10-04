@@ -66,12 +66,33 @@ await select(sampleDir+'plain.hwp');await settled();
 assert.equal(await evalJS("document.querySelector('#text-editor')"),null,'no separate paragraph form');
 await clickLine();assert.equal(await evalJS("document.activeElement.dataset.paragraph"),'0');
 assert.ok(await evalJS("document.querySelector('.document-caret') !== null"));
+// A mobile IME can recompose the whole word before the original caret.
+await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+await evalJS("{const f=document.querySelector('#document-input');f.setSelectionRange(3,3)}");
+await call('Input.imeSetComposition',{text:'서울시는',selectionStart:4,selectionEnd:4,replacementStart:0,replacementEnd:3});
+await waitFor("document.querySelector('.composition-text')?.textContent==='서울시는'");
+assert.equal(await evalJS("document.querySelector('#preview-state').textContent"),'원본');
+assert.ok(await evalJS("document.querySelector('#document-input').value.startsWith('서울시는 ')") );
+assert.ok(await evalJS("document.querySelector('.composition-mask')?.getBoundingClientRect().width>0"),'old word is covered');
+assert.equal(await evalJS("getComputedStyle(document.querySelector('.composition-text')).borderBottomStyle"),'none');
+const imeLeft=await evalJS("document.querySelector('.composition-text').getBoundingClientRect().left");
+assert.ok(Math.abs(imeLeft-(await linePoint(0,0)).x)<2,'whole-word composition starts at the original word');
+await call('Input.imeSetComposition',{text:'서울',selectionStart:2,selectionEnd:2});
+assert.equal(await evalJS("document.querySelector('.composition-text').textContent"),'서울');
+await call('Input.imeSetComposition',{text:'서울시는',selectionStart:4,selectionEnd:4});
+await call('Input.insertText',{text:'서울시는'});await settled();
+assert.ok(await evalJS("document.querySelector('#document-input').value.startsWith('서울시는 ')") );
+assert.equal(await evalJS("document.querySelector('.composition-text')"),null,'preview removed after page refresh');
+await evalJS("document.querySelector('#undo').click()");await waitFor("document.querySelector('#document-input').value.startsWith('서울은 ')");await settled();
+await call('Emulation.setDeviceMetricsOverride',{width:1100,height:1100,deviceScaleFactor:1,mobile:false});
+console.log('PASS mobile whole-word IME: mask, correct position, shortening, single commit, undo');
 // The same focused input and paper remain mounted throughout typing and rendering.
 await evalJS("window.editorInput=document.activeElement;window.editorPaper=document.querySelector('.page-surface')");
 const changed='부산광역시😀에서 새 문장을 입력합니다.\n다음 줄도 저장합니다.';
 await evalJS(`const field=document.querySelector('#document-input');field.dispatchEvent(new CompositionEvent('compositionstart'));field.value=${JSON.stringify(changed)};field.setSelectionRange(7,7);field.dispatchEvent(new InputEvent('input',{bubbles:true,isComposing:true,data:'광역시'}));`);
 await evalJS("new Promise(r=>setTimeout(r,300))");assert.equal(await evalJS("document.querySelector('#preview-state').textContent"),'원본','composition not committed early');
-assert.equal(await evalJS("document.querySelector('.composition-text').textContent"),'광역시');
+assert.match(await evalJS("document.querySelector('.composition-text').textContent"),/부산광역시/);
+assert.ok(await evalJS("document.querySelector('.composition-mask') !== null"));
 await evalJS("document.querySelector('#document-input').dispatchEvent(new CompositionEvent('compositionend'))");
 await waitFor("document.querySelector('#preview-state').textContent === '수정 중'");await settled();
 assert.equal(await evalJS("document.activeElement === editorInput && document.querySelector('.page-surface') === editorPaper"),true);
@@ -169,8 +190,10 @@ async function clickCell(index,blank=false,touch=false){
 for(const format of ['hwp','hwpx']){
  await select(join(downloadDir,'cells.'+format));await settled();
  await clickCell(0,true);assert.equal(await evalJS("document.querySelector('#document-input').value"),'첫셀');
- await evalJS("{window.cellInput=document.activeElement;const f=document.activeElement;f.dispatchEvent(new CompositionEvent('compositionstart'));f.value='첫셀 한글😀';f.setSelectionRange(f.value.length,f.value.length);f.dispatchEvent(new InputEvent('input',{bubbles:true,isComposing:true,data:'글'}))}");
+ await evalJS("{window.cellInput=document.activeElement;const f=document.activeElement;f.dispatchEvent(new CompositionEvent('compositionstart'));f.value='첫셀 한글😀';f.setSelectionRange(f.value.length,f.value.length);f.dispatchEvent(new InputEvent('input',{bubbles:true,isComposing:true,data:'첫셀 한글😀'}))}");
  await evalJS('new Promise(r=>setTimeout(r,150))');assert.equal(await evalJS("document.querySelector('#preview-state').textContent"),'원본');
+ assert.equal(await evalJS("document.querySelector('.composition-text').textContent"),'첫셀 한글😀');
+ assert.ok(await evalJS("document.querySelector('.composition-mask')!==null"),'cell whole-word composition hides existing letters');
  await evalJS("document.activeElement.dispatchEvent(new CompositionEvent('compositionend'))");await settled();
  assert.equal(await evalJS('document.activeElement===cellInput'),true);assert.match(await svgText(),/첫셀한글/);
  await clickCell(1);assert.equal(await evalJS("document.querySelector('#document-input').value"),'옆셀');
