@@ -1,6 +1,10 @@
 // 문서·비밀번호·편집 이력은 이 Worker 안에서만 처리합니다.
 importScripts("./vendor/cfb.min.js");
 const ready = Promise.all([import("./vendor/rhwp.js"), import("./editor-core.mjs" + new URL(self.location.href).search)]);
+if (typeof OffscreenCanvas !== "undefined") {
+  const context = new OffscreenCanvas(1, 1).getContext("2d");
+  if (context) self.measureTextWidth = (font, text) => { context.font = font; return context.measureText(text).width; };
+}
 let initialized;
 let doc;
 let session;
@@ -25,12 +29,17 @@ self.onmessage = ({ data }) => {
       if (!session) throw new Error("문서를 먼저 열어 주세요.");
       if (data.type === "page") {
         if (!Number.isInteger(data.page) || data.page < 0 || data.page >= doc.pageCount()) throw new Error("표시할 쪽을 찾을 수 없습니다.");
-        const svg = doc.renderPageSvg(data.page);
+        let page = data.page;
+        if (data.followCaret && data.caret && session.paragraphs.some(p => p.editable && p.section === data.caret.section && p.paragraph === data.caret.paragraph)) {
+          const cursor = JSON.parse(doc.getCursorRect(data.caret.section, data.caret.paragraph, data.caret.offset));
+          if (Number.isInteger(cursor?.pageIndex) && cursor.pageIndex >= 0 && cursor.pageIndex < doc.pageCount()) page = cursor.pageIndex;
+        }
+        const svg = doc.renderPageSvg(page);
         if (svg.length > 16 * 1024 * 1024) throw new Error("이 쪽의 그림·개체가 표시 한도를 넘었습니다.");
-        const runs = JSON.parse(doc.getPageTextLayout(data.page)).runs || [];
-        self.postMessage({ id: data.id, type: data.type, page: data.page, revision: session.revision, svg,
-          runs: runs.filter(r => r.parentParaIdx === undefined && session.paragraphs.some(p => p.editable &&
-            p.section === r.secIdx && p.paragraph === r.paraIdx && p.text.includes(r.text))).slice(0, 5000) });
+        const runs = JSON.parse(doc.getPageTextLayout(page)).runs || [];
+        const editable = new Set(session.paragraphs.filter(p => p.editable).map(p => `${p.section}:${p.paragraph}`));
+        self.postMessage({ id: data.id, type: data.type, page, revision: session.revision, svg,
+          runs: runs.slice(0, 5000).map(r => ({ ...r, editable: r.parentParaIdx === undefined && editable.has(`${r.secIdx}:${r.paraIdx}`) })) });
         return;
       }
       if (data.type === "edit") session.edit(data.section, data.paragraph, data.before, data.text);

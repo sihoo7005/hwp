@@ -11,8 +11,8 @@
   <main>
     <header>
       <p class="eyebrow">HWP 텍스트 에디터</p>
-      <h1>본문을 직접 수정하세요.</h1>
-      <p>본문을 클릭해 자유롭게 입력·삭제하고, 수정한 문서를 새 파일로 저장하세요.<br>문서 내용과 비밀번호는 브라우저 안에서 처리합니다.</p>
+      <h1>문서를 보면서 바로 수정하세요.</h1>
+      <p>원래 서식과 배치가 보이는 문서의 글자를 클릭해 입력·삭제하고, 수정한 문서를 새 파일로 저장하세요.<br>문서 내용과 비밀번호는 브라우저 안에서 처리합니다.</p>
     </header>
 
     <section class="card" aria-labelledby="open-title">
@@ -30,7 +30,7 @@
     <section class="card" aria-labelledby="preview-title">
       <div class="preview-heading"><h2 id="preview-title"><span class="step">2</span> 문서 편집</h2><span id="preview-state" class="muted">원본</span></div>
       <div class="viewer-toolbar">
-        <label for="view-mode">보기<select id="view-mode" disabled><option value="edit">텍스트 편집</option><option value="document">쪽 보기</option><option value="text">전체 텍스트</option></select></label>
+        <label for="view-mode">보기<select id="view-mode" disabled><option value="document">문서 편집</option><option value="text">전체 텍스트</option></select></label>
         <label for="zoom">확대<select id="zoom" disabled><option value="fit">너비 맞춤</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option></select></label>
 
         <span id="view-info" class="muted" aria-live="polite"></span>
@@ -49,10 +49,9 @@
         <button id="next-page" class="secondary" type="button" disabled aria-label="다음 쪽">다음</button>
       </div>
       <p id="viewer-status" class="muted" role="status" aria-live="polite"></p>
-      <div id="text-editor" class="text-editor" role="region" aria-label="본문 텍스트 편집" hidden></div>
-      <div id="preview" class="preview" data-mode="document" tabindex="0" role="region" aria-label="문서 미리보기"><p class="empty">문서를 열면 여기에 표시됩니다.</p></div>
-      <p class="muted">텍스트 편집에서 본문 문단을 수정하세요. 쪽 보기의 본문을 클릭해 해당 문단으로 이동할 수도 있습니다. Enter는 문단 안의 줄바꿈을 넣습니다. 표 셀·그림·수식·머리말 등의 편집은 아직 지원하지 않습니다.</p>
-      <p class="muted">쪽 보기에서는 그림·수식·도형·차트, 다단, 머리말·꼬리말·각주와 복잡한 표를 표시합니다. 설치되지 않은 글꼴은 대체되어 줄바꿈과 쪽 수가 달라질 수 있습니다. 일부 개체·구형 형식은 원본과 다르게 표시될 수 있습니다. 텍스트 보기에서는 글을 선택·복사할 수 있습니다.</p>
+      <div id="preview" class="preview" data-mode="document" tabindex="0" role="region" aria-label="문서 편집 및 보기"><p class="empty">문서를 열면 여기에 표시됩니다.</p></div>
+      <p class="muted">문서의 본문을 클릭하면 그 위치에 커서가 나타납니다. 입력·삭제·붙여넣기하면 문서의 배치가 갱신됩니다. 드래그로 같은 문단 안의 글자를 선택할 수 있습니다. Enter는 문단 안의 줄바꿈을 넣습니다. 표 셀·그림·수식·머리말 등의 편집은 아직 지원하지 않습니다.</p>
+      <p class="muted">문서에서는 그림·수식·도형·차트, 다단, 머리말·꼬리말·각주와 복잡한 표를 표시합니다. 설치되지 않은 글꼴은 대체되어 줄바꿈과 쪽 수가 달라질 수 있습니다. 일부 개체·구형 형식은 원본과 다르게 표시될 수 있습니다. 텍스트 보기에서는 글을 선택·복사할 수 있습니다.</p>
     </section>
 
     <aside class="notice">

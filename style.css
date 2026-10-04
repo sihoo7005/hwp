@@ -32,13 +32,16 @@ input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visib
 .page-navigation { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
 [hidden] { display: none !important; }
 .editor-toolbar { margin: 0 0 14px; align-items: center; }
-.text-editor { max-height: 620px; overflow: auto; padding: 18px; border: 1px solid #d6dde7; border-radius: 8px; background: #fbfcfe; }
-.text-editor h3 { font-size: .9rem; color: #647184; margin: 0 0 14px; }
-.editor-paragraph { margin-bottom: 12px; }
-.paragraph-label { display: block; font-size: .75rem; font-weight: 400; color: #647184; margin-bottom: 3px; }
-.editor-paragraph textarea { display: block; width: 100%; min-height: 44px; max-height: 400px; padding: 9px 12px; resize: vertical; font: 1rem/1.65 system-ui, sans-serif; color: #172331; background: white; border: 1px solid #dde3ec; border-radius: 6px; }
-.editor-paragraph textarea:focus { border-color: #315d9f; }
-.editor-paragraph textarea[readonly] { background: #edf1f6; color: #647184; }
+.page-surface { position: relative; overflow: hidden; line-height: 1; }
+.editable-page { cursor: text; }
+.page-image { user-select: none; -webkit-user-drag: none; }
+.document-selection { position: absolute; inset: 0; pointer-events: none; }
+.selection-rect { position: absolute; background: #558ce74d; }
+.document-caret { position: absolute; width: 1.5px; background: #172331; animation: caret-blink 1s step-end infinite; }
+@keyframes caret-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .document-caret { animation: none; } }
+.document-input, .document-input:focus-visible { position: absolute; width: 2px; min-height: 16px; padding: 0; margin: 0; border: 0; border-radius: 0; resize: none; font: 16px/1 sans-serif; color: transparent; caret-color: transparent; background: transparent; opacity: .01; overflow: hidden; outline: none; pointer-events: none; }
+.composition-text { position: absolute; white-space: pre; background: white; border-bottom: 1px solid #315d9f; line-height: 1; }
 .page-navigation label { display: flex; align-items: center; gap: 8px; }
 .page-navigation input { width: 80px; margin: 0; padding: 7px; }
 .page-navigation button { padding: 7px 12px; }

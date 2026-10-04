@@ -2,11 +2,11 @@ import { mkdir, copyFile, readFile, writeFile, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
 await rm("dist", { recursive: true, force: true });
 await mkdir("dist/vendor", { recursive: true });
-for (const file of ["style.css", "app.mjs", "advanced-worker.mjs", "editor-core.mjs", "RHWP_THIRD_PARTY_LICENSES.md"]) {
+for (const file of ["style.css", "app.mjs", "advanced-worker.mjs", "editor-core.mjs", "page-editor.mjs", "RHWP_THIRD_PARTY_LICENSES.md"]) {
   await copyFile(file, `dist/${file}`);
 }
 const hash = createHash("sha256");
-for (const file of ["app.mjs", "advanced-worker.mjs", "editor-core.mjs", "style.css"]) hash.update(await readFile(file));
+for (const file of ["app.mjs", "advanced-worker.mjs", "editor-core.mjs", "page-editor.mjs", "style.css"]) hash.update(await readFile(file));
 const version = hash.digest("hex").slice(0, 12);
 await writeFile("dist/index.html", (await readFile("index.html", "utf8"))
   .replace('./app.mjs"', `./app.mjs?v=${version}"`).replace('./style.css"', `./style.css?v=${version}"`));
