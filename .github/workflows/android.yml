@@ -51,6 +51,7 @@ jobs:
       - name: Build native reader
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
         run: bash android/scripts/build-native.sh
       - name: Build APK and run Android lint
         working-directory: android
