@@ -32,7 +32,7 @@ for path in paths:
             borders = 0
             for drawing in page.get_drawings():
                 for item in drawing['items']:
-                    if item[0] == 'l' and (item[1] - item[2]).magnitude > 20:
+                    if item[0] == 'l' and abs(item[1] - item[2]) > 20:
                         borders += 1
                     if item[0] == 're':
                         rect = item[1]
