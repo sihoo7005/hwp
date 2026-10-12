@@ -3,6 +3,12 @@
 use rhwp::renderer::pdf::{apply_pdf_font_options, parse_svg_with_synthetic_italic,
     prepare_svg_with_synthetic_bold, PdfExportOptions};
 use std::sync::Arc;
+use std::cell::Cell;
+thread_local! { static IMAGE_DEPTH: Cell<u8> = const { Cell::new(0) }; }
+struct ImageDepthGuard;
+impl Drop for ImageDepthGuard {
+    fn drop(&mut self) { IMAGE_DEPTH.with(|depth| depth.set(depth.get() - 1)); }
+}
 
 pub fn font_database(fonts: &PdfExportOptions) -> Arc<usvg::fontdb::Database> {
     let mut database = usvg::fontdb::Database::new();
@@ -23,6 +29,13 @@ pub fn outline(svg: &str, fonts: &PdfExportOptions,
     let default_data = usvg::ImageHrefResolver::default_data_resolver();
     options.image_href_resolver.resolve_data = Box::new(move |mime, data, opts| {
         if mime != "image/svg+xml" { return default_data(mime, data, opts); }
+        // A custom image resolver starts a fresh SVG parser for each resource.
+        // Bound nested SVG images even when the upstream parser restarts its limit.
+        let allowed = IMAGE_DEPTH.with(|depth| {
+            if depth.get() >= 8 { false } else { depth.set(depth.get() + 1); true }
+        });
+        if !allowed { return None; }
+        let _guard = ImageDepthGuard;
         let tree = usvg::Tree::from_data(&data, opts).ok()?;
         let size = tree.size();
         let scale = (4096.0 / size.width().max(size.height())).min(1.0)
@@ -59,11 +72,13 @@ mod tests {
           <g clip-path="url(#clip)" transform="rotate(10 50 50)">
             <path d="M0 0L150 80" stroke="red" stroke-width="2"/>
             <ellipse cx="50" cy="50" rx="20" ry="10" fill="blue"/>
-          </g></svg>"##;
+          </g><image x="150" y="0" width="10" height="10" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMCIgaGVpZ2h0PSIxMCI+PHJlY3Qgd2lkdGg9IjEwIiBoZWlnaHQ9IjEwIiBmaWxsPSJyZWQiLz48L3N2Zz4="/></svg>"##;
         let (output, _) = outline(source, &options, font_database(&options)).unwrap();
         assert!(output.contains("clipPath"));
         assert!(output.contains("<path"));
         assert!(output.contains("transform="));
         assert!(!output.contains("<text"));
+        assert!(output.contains("data:image/png"));
+        assert!(!output.contains("data:image/svg+xml"));
     }
 }

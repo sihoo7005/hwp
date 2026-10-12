@@ -44,7 +44,7 @@ private fun ReaderScreen(reader: ReaderViewModel = viewModel()) {
                     enabled = state !is ReaderState.Loading) { Text("글꼴 추가") }
             }
             when (val current = state) {
-                ReaderState.Empty -> Text("HWP 3.x · HWP 5.x · HWPX\n문서를 선택하면 수식·표·그림을 포함한 페이지를 표시합니다.",
+                ReaderState.Empty -> Text("HWP 3.x · HWP 5.x · HWPX\n문서를 선택하면 수식·표·그림·도형·도표를 포함한 페이지를 표시합니다.",
                     Modifier.padding(vertical = 24.dp))
                 is ReaderState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {

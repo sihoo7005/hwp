@@ -56,7 +56,7 @@ fn open_document(bytes: &[u8], font_root: &Path, cache_root: &Path) -> Value {
         fallback_serif: "Noto Serif KR".into(), fallback_sans: "Noto Sans KR".into(),
         fallback_mono: "D2Coding".into(), equation_font: Some("Latin Modern Math".into()),
         font_paths,
-        // Glyph paths avoid font-subsetting failures and reduce mobile peak memory.
+        // Reuse upstream SVG font configuration only; no PDF is generated.
         // Source text remains available separately for copying and accessibility.
         embed_text: false,
     };

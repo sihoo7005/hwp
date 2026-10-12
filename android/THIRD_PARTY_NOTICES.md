@@ -28,10 +28,12 @@ SOFTWARE.
 # AndroidSVG 1.4
 
 Source: https://github.com/BigBadaboom/androidsvg
+Copyright 2013 Paul LeBeau, Cave Rock Software Ltd.
 License: Apache-2.0; full license included in assets/androidsvg-license.txt.
 
 # usvg / resvg 0.45.1
 
 Source: https://github.com/linebender/resvg
+Copyright 2023 the Resvg Authors.
 License: MIT OR Apache-2.0. Used under Apache-2.0 (full license above).
 Only embedded SVG image resources use resvg; page display uses Android Canvas.
