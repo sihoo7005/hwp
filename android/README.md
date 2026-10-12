@@ -28,18 +28,26 @@ HWP3와 복잡한 개체의 호환성은 rhwp의 지원 범위에 따릅니다.
 ```text
 HWP3 / HWP5 / HWPX
     → rhwp DocumentCore (Rust 세션)
-    → PageLayerTree → 호환 SVG/PDF 출력 (쪽별)
-    → Android PdfRenderer
+    → PageLayerTree → rhwp SVG 렌더러
+    → usvg 글리프 경로 변환
+    → AndroidSVG → Android Canvas / Picture
     → Compose 페이지 화면
 ```
 
-기존의 완성된 SVG/PDF 백엔드로 표·수식·도형·이미지·겹침 순서를 함께 재생합니다.
-직접 PaintOp의 일부만 구현하는 별도 Android 그래픽 엔진을 만들지 않습니다.
-PDF는 앱 내부의 표시용 임시 파일이며 원본 HWP를 수정하지 않습니다.
-글리프를 경로로 저장해 PDF 폰트 서브셋 오류와 변환 메모리를 줄이고,
-본문은 별도 텍스트 보기로 제공해 선택·복사를 유지합니다.
+rhwp의 SVG 렌더러로 표·수식·도형·이미지·차트·겹침 순서를 재생합니다.
+PDF 생성과 PdfRenderer는 표시 경로에서 제거했습니다. AndroidSVG가 SVG의 벡터
+경로·클립·그라데이션·이미지를 Android Canvas 명령으로 기록합니다.
+확대는 Canvas 변환으로 같은 벡터 명령을 다시 그리며 페이지를 비트맵으로 만들지 않습니다.
 
-비트맵은 표시 폭·확대율에 맞춰 갱신하며 최대 4096px 폭·800만 픽셀로 제한합니다.
+번들·사용자·시스템 폰트로 글리프를 경로로 변환하여 글꼴과 수식의 위치를 유지합니다.
+굵기·기울임 보정은 기존 rhwp 함수를 재사용합니다. 이미지로 삽입된 SVG는
+Android 이미지 디코더 호환을 위해 해당 리소스만 PNG로 변환합니다(최대 4096px·800만 픽셀).
+일부 필터·그림자 효과는 AndroidSVG에서 지원하지 않아 경고를 표시합니다.
+
+DocumentCore 세션과 쪽별 원본 개체 경계 JSON을 유지합니다. 표시 SVG는 저장·편집의
+원본이 아닙니다. 본문 선택·복사는 별도 텍스트 보기에서 제공하며,
+커서·문서 변경·HWP/HWPX 저장은 아직 구현하지 않았습니다.
+
 새 문서를 열거나 ViewModel이 정리되면 Rust 세션과 해당 임시 파일을 닫습니다.
 
 ## 빌드
@@ -67,18 +75,18 @@ APK: app/build/outputs/apk/debug/app-debug.apk.
 
 ## 검증
 
-CI는 실제 HWP3/HWP5/HWPX 및 수식·그림·표 샘플을 렌더링합니다.
+CI는 실제 HWP3/HWP5/HWPX 및 수식·그림·표·그룹 도형·HWP/HWPX 막대 차트 샘플을 렌더링합니다.
 첫 쪽·마지막 쪽, 페이지 식별자·닫힌 세션·범위 오류를 검사하고
-독립 PDF rasterizer로 생성한 쪽의 페이지 수·크기·비어 있지 않은 결과를 확인합니다.
+독립 SVG rasterizer로 생성한 쪽의 페이지 수·크기·비어 있지 않은 결과를 확인합니다.
 
-Android 에뮬레이터에서 JNI → PdfRenderer → Compose 화면까지 실행하고,
+Android 에뮬레이터에서 JNI → Android Canvas → Compose 화면까지 실행하고,
 쪽 이미지와 화면 캡처를 CI artifact에 남깁니다. 개인 실기기 확인은 별도입니다.
 검증 샘플은 test APK에만 포함하며 배포 앱에는 문서를 번들하지 않습니다.
 
 ## 파일
 
 - MainActivity.kt: 원본·텍스트 보기, 파일·글꼴 선택과 페이지·배율 조작
-- PageViewer.kt: Android PdfRenderer 및 화면 확대·이동
+- PageViewer.kt: AndroidSVG / Canvas 및 화면 확대·이동
 - ReaderViewModel.kt: 비동기 열기와 세션 소유권
 - NativeReader.kt: JNI 계약
 - FontStore.kt: 기본 글꼴 준비와 사용자 글꼴 검증
@@ -86,7 +94,8 @@ Android 에뮬레이터에서 JNI → PdfRenderer → Compose 화면까지 실�
 - scripts/: 고정 엔진·폰트 준비, 렌더 테스트·NDK 빌드
 
 rhwp v0.8.7: 1a76570e833917d15817415a53c09ad61ab3203f.
-업스트림 vendor/svg2pdf 패치를 함께 사용합니다.
+글꼴 보정 유틸리티가 포함된 rhwp 의존성을 위해 업스트림 vendor/svg2pdf 패치를 유지합니다.
+앱은 PDF를 생성하지 않습니다.
 폰트는 고정 커밋의 WOFF2를 SFNT로 해제하며 글리프와 이름을 유지합니다.
 폰트·엔진 소스와 네이티브 산출물은 Git 대신 준비 스크립트로 관리합니다.
 

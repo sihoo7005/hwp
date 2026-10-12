@@ -5,7 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 data class ReadDocument(val id: Long, val format: String, val totalPages: Int, val warnings: List<String>)
-data class RenderedPage(val file: File, val text: String, val warnings: List<String>)
+data class RenderedPage(val file: File, val layout: File, val text: String, val warnings: List<String>)
 
 object NativeReader {
     init { System.loadLibrary("hwp_reader") }
@@ -24,7 +24,7 @@ object NativeReader {
     }
     fun page(id: Long, index: Int): RenderedPage {
         val value = result(renderPage(id, index))
-        return RenderedPage(File(value.getString("pdfPath")), value.getString("text"),
+        return RenderedPage(File(value.getString("svgPath")), File(value.getString("layoutPath")), value.getString("text"),
             value.getJSONArray("warnings").strings())
     }
     fun close(id: Long) { if (id != 0L) closeDocument(id) }

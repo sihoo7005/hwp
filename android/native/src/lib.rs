@@ -1,4 +1,6 @@
+mod canvas_svg;
 use rhwp::renderer::pdf::PdfExportOptions;
+use rhwp::renderer::svg::FontEmbedMode;
 use rhwp::renderer::render_tree::{RenderNode, RenderNodeType};
 use rhwp::service::{DocumentService, OpenOptions};
 use rhwp::DocumentCore;
@@ -18,6 +20,7 @@ struct Session {
     dir: PathBuf,
     options: PdfExportOptions,
     cache: VecDeque<(u32, Value)>,
+    fonts: Option<std::sync::Arc<usvg::fontdb::Database>>,
 }
 impl Drop for Session {
     fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.dir); }
@@ -57,7 +60,7 @@ fn open_document(bytes: &[u8], font_root: &Path, cache_root: &Path) -> Value {
         // Source text remains available separately for copying and accessibility.
         embed_text: false,
     };
-    let session = Session { core: opened.into_core(), dir, options, cache: VecDeque::new() };
+    let session = Session { core: opened.into_core(), dir, options, cache: VecDeque::new(), fonts: None };
     match sessions().lock() {
         Ok(mut sessions) => { sessions.insert(id, session); }
         Err(_) => return failure("ENGINE_ERROR", "문서 엔진 상태를 복구하지 못했습니다."),
@@ -84,12 +87,22 @@ fn render_page(id: i64, index: u32) -> Value {
         Ok(tree) => tree, Err(error) => return failure("LAYOUT_ERROR", error),
     };
     let unresolved = placeholders(&tree.root);
-    let pdf = match session.core.render_pages_pdf_native_with_options(&[index], &session.options) {
-        Ok(pdf) => pdf, Err(error) => return failure("RENDER_ERROR", error),
+    let source = match session.core.render_page_svg_with_fonts(index, FontEmbedMode::None,
+        &session.options.font_paths) {
+        Ok(svg) => svg, Err(error) => return failure("RENDER_ERROR", error),
     };
-    let path = session.dir.join(format!("{index}.pdf"));
-    if let Err(error) = std::fs::write(&path, pdf) { return failure("CACHE_ERROR", error); }
-    let mut warnings = Vec::new();
+    let fonts = session.fonts.get_or_insert_with(|| canvas_svg::font_database(&session.options)).clone();
+    let (svg, mut warnings) = match canvas_svg::outline(&source, &session.options, fonts) {
+        Ok(rendered) => rendered, Err(error) => return failure("RENDER_ERROR", error),
+    };
+    let path = session.dir.join(format!("{index}.svg"));
+    if let Err(error) = std::fs::write(&path, svg) { return failure("CACHE_ERROR", error); }
+    // Keep source object bounds alongside the display. Editing continues to target
+    // the live DocumentCore, never the outlined SVG or a flattened PDF.
+    let layout_path = session.dir.join(format!("{index}.json"));
+    if let Err(error) = std::fs::write(&layout_path, tree.root.to_json()) {
+        return failure("CACHE_ERROR", error);
+    }
     if unresolved > 0 {
         warnings.push(format!("이 쪽에 표시 엔진이 해석하지 못한 개체 {unresolved}개가 있습니다."));
     }
@@ -97,12 +110,13 @@ fn render_page(id: i64, index: u32) -> Value {
         Ok(text) => text,
         Err(error) => { warnings.push(format!("본문 텍스트 추출 실패: {error}")); String::new() }
     };
-    let reply = json!({"ok": true, "index": index, "pdfPath": path.to_string_lossy(),
+    let reply = json!({"ok": true, "index": index, "svgPath": path.to_string_lossy(), "layoutPath": layout_path.to_string_lossy(),
         "text": text, "warnings": warnings, "unresolvedObjects": unresolved});
     session.cache.push_back((index, reply.clone()));
     while session.cache.len() > CACHE_PAGES {
         if let Some((old, _)) = session.cache.pop_front() {
-            let _ = std::fs::remove_file(session.dir.join(format!("{old}.pdf")));
+            let _ = std::fs::remove_file(session.dir.join(format!("{old}.svg")));
+            let _ = std::fs::remove_file(session.dir.join(format!("{old}.json")));
         }
     }
     reply
@@ -191,6 +205,7 @@ mod tests {
         for (name, format) in [
             ("sample.hwp", "hwp5"), ("sample.hwpx", "hwpx"), ("sample3.hwp", "hwp3"),
             ("equation.hwpx", "hwpx"), ("image.hwpx", "hwpx"), ("table.hwpx", "hwpx"),
+            ("shapes.hwp", "hwp5"), ("chart.hwp", "hwp5"), ("chart.hwpx", "hwpx"),
         ] {
             let opened = open_document(&std::fs::read(dir.join(name)).expect("fixture"),
                 Path::new(&font_root), &dir.join("cache"));
@@ -202,9 +217,12 @@ mod tests {
                 let page = render_page(id, index);
                 assert_eq!(page["ok"], true, "{page}");
                 assert_eq!(page["index"], index);
-                let pdf = std::fs::read(page["pdfPath"].as_str().unwrap()).unwrap();
-                assert!(pdf.starts_with(b"%PDF-"), "{name}");
-                std::fs::write(artifacts.join(format!("{name}-{index}.pdf")), pdf).unwrap();
+                let svg = std::fs::read_to_string(page["svgPath"].as_str().unwrap()).unwrap();
+                assert!(svg.contains("<svg"), "{name}");
+                assert!(!svg.contains("<text"), "all glyphs must be outlined: {name}");
+                std::fs::write(artifacts.join(format!("{name}-{index}.svg")), svg).unwrap();
+                std::fs::copy(page["layoutPath"].as_str().unwrap(),
+                    artifacts.join(format!("{name}-{index}.json"))).unwrap();
                 if name == "equation.hwpx" && index == 0 {
                     let sessions = sessions().lock().unwrap();
                     let tree = sessions[&id].core.build_page_render_tree(index).unwrap();

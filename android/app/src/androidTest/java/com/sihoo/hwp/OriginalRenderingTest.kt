@@ -22,16 +22,22 @@ import org.junit.runner.RunWith
 class OriginalRenderingTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
-    @Test fun rendersObjectsThroughJniAndAndroidPdfRenderer() {
+    @Test fun rendersObjectsThroughJniAndNativeCanvas() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val previews = File(context.filesDir, "visual-checks").apply { mkdirs() }
-        for (name in listOf("sample.hwp", "sample.hwpx", "sample3.hwp", "equation.hwpx", "image.hwpx", "table.hwpx")) {
+        for (name in listOf("sample.hwp", "sample.hwpx", "sample3.hwp", "equation.hwpx", "image.hwpx", "table.hwpx", "shapes.hwp", "chart.hwp", "chart.hwpx")) {
             val bytes = instrumentation.context.assets.open("fixtures/$name").use { it.readBytes() }
             val document = NativeReader.open(bytes, FontStore.prepare(context), File(context.cacheDir, "instrumented-pages"))
             try {
                 val page = NativeReader.page(document.id, 0)
-                val bitmap = rasterizePage(page.file, 900)
+                val drawing = loadCanvasPage(page.file)
+                val bitmap = Bitmap.createBitmap(900, (900 * drawing.height / drawing.width).toInt(), Bitmap.Config.ARGB_8888)
+                bitmap.eraseColor(android.graphics.Color.WHITE)
+                android.graphics.Canvas(bitmap).apply {
+                    scale(900 / drawing.width, 900 / drawing.width)
+                    drawPicture(drawing.picture)
+                }
                 try {
                     val pixels = IntArray(bitmap.width * bitmap.height)
                     bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
