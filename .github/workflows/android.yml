@@ -83,8 +83,9 @@ jobs:
           target: google_apis
           disable-animations: true
           script: |
-            ./android/gradlew -p android :app:connectedDebugAndroidTest --stacktrace
+            ./android/gradlew -p android :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true --stacktrace
             adb exec-out run-as com.sihoo.hwp tar -C files -cf - visual-checks > android/app/build/visual-checks.tar
+            tar -tf android/app/build/visual-checks.tar
       - name: Upload dependency lock and reports
         if: always()
         uses: actions/upload-artifact@v4

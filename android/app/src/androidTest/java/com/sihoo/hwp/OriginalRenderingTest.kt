@@ -68,6 +68,18 @@ class OriginalRenderingTest {
                 }
                 compose.onNodeWithContentDescription("1쪽 원본 서식").assertIsDisplayed()
                 val screenshot = compose.onRoot().captureToImage().asAndroidBitmap()
+                val screenPixels = IntArray(screenshot.width * screenshot.height)
+                screenshot.getPixels(screenPixels, 0, screenshot.width, 0, 0, screenshot.width, screenshot.height)
+                assertTrue("$name must paint content in the Compose viewport",
+                    screenPixels.count { (it and 0xFFFFFF) < 0xC0C0C0 } > 100)
+                if (name.startsWith("chart.")) {
+                    assertTrue("$name chart must appear in the GPU-backed Compose Canvas", screenPixels.count {
+                        val red = (it shr 16) and 255
+                        val green = (it shr 8) and 255
+                        val blue = it and 255
+                        maxOf(red, green, blue) - minOf(red, green, blue) > 30
+                    } > 50)
+                }
                 File(previews, "$name-screen.png").outputStream().use {
                     screenshot.compress(Bitmap.CompressFormat.PNG, 100, it)
                 }
