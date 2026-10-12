@@ -42,6 +42,14 @@ class OriginalRenderingTest {
                     val pixels = IntArray(bitmap.width * bitmap.height)
                     bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
                     assertTrue("$name must have visible content", pixels.count { (it and 0xFFFFFF) < 0xF5F5F5 } > 100)
+                    if (name.startsWith("chart.")) {
+                        assertTrue("$name must draw chart series on Android Canvas", pixels.count {
+                            val red = (it shr 16) and 255
+                            val green = (it shr 8) and 255
+                            val blue = it and 255
+                            maxOf(red, green, blue) - minOf(red, green, blue) > 30
+                        } > 50)
+                    }
                     File(previews, "$name-page.png").outputStream().use {
                         bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
                     }
