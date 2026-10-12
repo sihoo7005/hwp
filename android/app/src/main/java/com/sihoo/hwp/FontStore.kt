@@ -50,7 +50,7 @@ object FontStore {
             else -> error("TTF, OTF 또는 TTC 글꼴을 선택해 주세요.")
         }
         val root = File(prepare(context), "custom")
-        val temp = File.createTempFile("font-", ".$extension", root)
+        val temp = File.createTempFile("font-", ".$extension", context.cacheDir)
         try {
             temp.writeBytes(bytes)
             Typeface.createFromFile(temp)

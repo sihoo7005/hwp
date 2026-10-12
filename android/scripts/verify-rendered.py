@@ -28,6 +28,17 @@ for path in paths:
         if path.name == "image.hwpx-0.pdf":
             assert page.get_images(full=True), "Embedded image was lost in PDF output"
         if path.name == "table.hwpx-0.pdf":
-            assert sum(item['type'] in ('s', 'fs') for item in page.get_drawings()) >= 4, "Table borders missing"
+            # SVG exporters may lower borders to filled thin rectangles, not strokes.
+            borders = 0
+            for drawing in page.get_drawings():
+                for item in drawing['items']:
+                    if item[0] == 'l' and (item[1] - item[2]).magnitude > 20:
+                        borders += 1
+                    if item[0] == 're':
+                        rect = item[1]
+                        if min(rect.width, rect.height) < 3 and max(rect.width, rect.height) > 20:
+                            borders += 1
+            print(f"Table long edges: {borders}")
+            assert borders >= 4, "Table border geometry missing"
         pixels.save(path.with_suffix(".png"))
         print(f"{path.name}: one page, {pixels.width}x{pixels.height}, {ink} ink pixels")
