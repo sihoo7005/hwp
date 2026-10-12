@@ -70,6 +70,13 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             catch (error: Exception) { mutableState.value = ReaderState.Error(error.message ?: "글꼴을 추가하지 못했습니다.") }
         }
     }
+    fun close() {
+        if (mutableState.value is ReaderState.Loading) return
+        lastUri = null
+        val id = handle.getAndSet(0)
+        mutableState.value = ReaderState.Empty
+        viewModelScope.launch(Dispatchers.IO) { NativeReader.close(id) }
+    }
     override fun onCleared() {
         disposed = true
         val id = handle.getAndSet(0)

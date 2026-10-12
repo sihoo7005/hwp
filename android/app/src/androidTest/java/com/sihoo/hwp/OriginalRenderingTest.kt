@@ -58,8 +58,7 @@ class OriginalRenderingTest {
                 compose.runOnUiThread {
                     compose.activity.setContent {
                         MaterialTheme {
-                            var zoom by remember { mutableFloatStateOf(1f) }
-                            PageViewer(document, 0, zoom, false, { zoom = it }, Modifier.fillMaxSize())
+                            PageViewer(document, 0, false, Modifier.fillMaxSize())
                         }
                     }
                 }
@@ -87,4 +86,68 @@ class OriginalRenderingTest {
             } finally { NativeReader.close(document.id) }
         }
     }
+
+    @Test fun scrollsPagesAndUsesOfficeMenus() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val document = NativeReader.open(
+            instrumentation.context.assets.open("fixtures/sample3.hwp").use { it.readBytes() },
+            FontStore.prepare(context), File(context.cacheDir, "scroll-test"))
+        var opened = 0
+        try {
+            compose.runOnUiThread {
+                compose.activity.setContent {
+                    MaterialTheme {
+                        EditorWorkspace(ReaderState.Ready("스크롤 테스트.hwp", document), { opened++ }, {})
+                    }
+                }
+            }
+            compose.waitUntil(30_000) {
+                compose.onAllNodesWithContentDescription("1쪽 원본 서식").fetchSemanticsNodes().isNotEmpty()
+            }
+            // Exercise real vertical gestures through the horizontal/pinch container.
+            repeat(3) {
+                compose.onNodeWithTag("document-pages").performTouchInput { swipeUp(durationMillis = 500) }
+                compose.waitForIdle()
+            }
+            compose.onNodeWithTag("page-status").assert(
+                SemanticsMatcher("vertical swipes must advance the page") { node ->
+                    val text = node.config[androidx.compose.ui.semantics.SemanticsProperties.Text].joinToString { it.text }
+                    !text.startsWith("1 /")
+                })
+            compose.onNodeWithTag("document-pages").performScrollToIndex(1)
+            compose.waitUntil(30_000) {
+                compose.onAllNodesWithContentDescription("2쪽 원본 서식").fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithTag("page-status").assertTextEquals("2 / ${document.totalPages}쪽")
+            compose.onNodeWithText("파일").performClick()
+            compose.onNodeWithText("저장").assertIsNotEnabled()
+            compose.onNodeWithText("문서 열기").performClick()
+            org.junit.Assert.assertEquals(1, opened)
+            compose.onNodeWithText("삽입").performClick()
+            compose.onNodeWithText("표").assertIsNotEnabled()
+            compose.onNodeWithText("그림").assertIsNotEnabled()
+            val previews = File(context.filesDir, "visual-checks").apply { mkdirs() }
+            fun capture(name: String) {
+                File(previews, name).outputStream().use {
+                    compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it)
+                }
+            }
+            capture("office-insert-menu.png")
+            compose.onNodeWithText("보기").performClick()
+            compose.onNodeWithText("폭 맞춤").performClick()
+            compose.onNodeWithText("쪽 이동").performClick()
+            compose.onNode(hasSetTextAction()).performTextReplacement(document.totalPages.toString())
+            compose.onNodeWithText("이동").performClick()
+            compose.waitUntil(30_000) {
+                compose.onAllNodesWithContentDescription("${document.totalPages}쪽 원본 서식").fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithTag("page-status").assertTextEquals("${document.totalPages} / ${document.totalPages}쪽")
+            capture("office-scroll-last-page.png")
+        } finally {
+            compose.runOnUiThread { compose.activity.setContent { Text("검증 완료") } }
+            NativeReader.close(document.id)
+        }
+    }
+
 }
