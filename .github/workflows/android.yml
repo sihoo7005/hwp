@@ -40,6 +40,12 @@ jobs:
           gradle-version: "8.11.1"
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --version 4.1.2 --locked
+      - name: Prepare rhwp source
+        run: bash android/scripts/prepare-rhwp.sh
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: android/native -> target
+          cache-on-failure: true
       - name: Test real HWP3, HWP5 and HWPX documents
         run: bash android/scripts/test-native.sh
       - name: Build native reader
