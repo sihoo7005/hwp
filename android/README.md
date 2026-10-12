@@ -19,8 +19,9 @@ Kotlin / Jetpack Compose UI + Rust / rhwp 네이티브 읽기 엔진입니다.
 
 ## 빌드
 
-필요: JDK 17, Gradle 8.11.1, Android SDK 35, NDK 27.2.12479018,
+필요: JDK 17, Android SDK 35, NDK 27.2.12479018,
 Rust 1.93.1, cargo-ndk 4.1.2.
+Gradle 8.11.1은 공식 Gradle Wrapper로 자동 다운로드합니다.
 
 ```bash
 cd android
@@ -29,11 +30,11 @@ cargo install cargo-ndk --version 4.1.2 --locked
 export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
 bash scripts/test-native.sh
 bash scripts/build-native.sh
-gradle :app:assembleDebug :app:lintDebug
+./gradlew :app:assembleDebug :app:lintDebug
 ```
 
 Android Studio에서는 이 `android` 폴더를 열고, 먼저 네이티브 빌드 스크립트를 실행합니다.
-Gradle을 직접 설치하거나 설치한 Gradle로 `gradle wrapper --gradle-version 8.11.1`을 실행할 수 있습니다.
+Windows에서는 `gradlew.bat`를 사용합니다. 네이티브 빌드 스크립트는 Bash 환경이 필요합니다.
 SDK 위치는 `ANDROID_HOME` 또는 로컬 `local.properties`의 `sdk.dir`로 설정합니다.
 APK: `app/build/outputs/apk/debug/app-debug.apk`.
 
