@@ -15,6 +15,6 @@ fi
 git -C "$rhwp_dir" fetch --filter=blob:none --depth=1 origin "$rhwp_revision"
 git -C "$rhwp_dir" sparse-checkout init --cone
 # Include workspace manifests and compile-time font resources, not the large corpus.
-git -C "$rhwp_dir" sparse-checkout set src crates vendor bindings tools assets/fonts saved
+git -C "$rhwp_dir" sparse-checkout set src crates vendor bindings tools assets/fonts saved ttfs/opensource
 git -C "$rhwp_dir" checkout --detach FETCH_HEAD
 test "$(git -C "$rhwp_dir" rev-parse HEAD)" = "$rhwp_revision"

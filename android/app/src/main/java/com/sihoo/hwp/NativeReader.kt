@@ -1,40 +1,32 @@
 package com.sihoo.hwp
 
+import java.io.File
+import org.json.JSONArray
 import org.json.JSONObject
 
-data class DocumentPage(val index: Int, val text: String, val warning: String?)
-data class ReadDocument(
-    val format: String,
-    val totalPages: Int,
-    val pages: List<DocumentPage>,
-    val truncated: Boolean,
-)
+data class ReadDocument(val id: Long, val format: String, val totalPages: Int, val warnings: List<String>)
+data class RenderedPage(val file: File, val text: String, val warnings: List<String>)
 
 object NativeReader {
-    init {
-        System.loadLibrary("hwp_reader")
+    init { System.loadLibrary("hwp_reader") }
+    private external fun openDocument(data: ByteArray, fonts: String, cache: String): String
+    private external fun renderPage(id: Long, index: Int): String
+    private external fun closeDocument(id: Long)
+    private fun result(value: String): JSONObject {
+        val result = JSONObject(value)
+        require(result.getBoolean("ok")) { result.getString("message") }
+        return result
     }
-
-    private external fun readDocument(data: ByteArray): String
-
-    fun read(data: ByteArray): ReadDocument {
-        val result = JSONObject(readDocument(data))
-        if (!result.getBoolean("ok")) {
-            throw IllegalArgumentException(result.getString("message"))
-        }
-        val pages = result.getJSONArray("pages")
-        return ReadDocument(
-            format = result.getString("format"),
-            totalPages = result.getInt("totalPages"),
-            pages = List(pages.length()) { index ->
-                val page = pages.getJSONObject(index)
-                DocumentPage(
-                    index = page.getInt("index"),
-                    text = page.getString("text"),
-                    warning = page.optString("warning").takeIf { it.isNotBlank() },
-                )
-            },
-            truncated = result.getBoolean("truncated"),
-        )
+    fun open(data: ByteArray, fonts: File, cache: File): ReadDocument {
+        val value = result(openDocument(data, fonts.absolutePath, cache.absolutePath))
+        return ReadDocument(value.getLong("id"), value.getString("format"),
+            value.getInt("totalPages"), value.getJSONArray("warnings").strings())
     }
+    fun page(id: Long, index: Int): RenderedPage {
+        val value = result(renderPage(id, index))
+        return RenderedPage(File(value.getString("pdfPath")), value.getString("text"),
+            value.getJSONArray("warnings").strings())
+    }
+    fun close(id: Long) { if (id != 0L) closeDocument(id) }
+    private fun JSONArray.strings() = List(length()) { getString(it) }
 }

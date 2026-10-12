@@ -5,3 +5,5 @@ local.properties
 native/target/
 vendor/
 app/src/main/jniLibs/
+app/src/main/assets/fonts/
+app/src/androidTest/assets/fixtures/

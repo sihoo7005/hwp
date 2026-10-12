@@ -12,8 +12,9 @@ android {
         applicationId = "com.sihoo.hwp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
@@ -32,6 +33,9 @@ android {
 // Fail explicitly rather than producing an APK whose reader cannot load.
 val verifyNativeLibrary by tasks.registering {
     doLast {
+        check(file("src/main/assets/fonts/NotoSansKR-Regular.ttf").isFile) {
+            "Missing native fonts. Run: python scripts/prepare-fonts.py"
+        }
         for (abi in listOf("arm64-v8a", "x86_64")) {
             check(file("src/main/jniLibs/$abi/libhwp_reader.so").isFile) {
                 "Missing rhwp library for $abi. Run: bash scripts/build-native.sh"
@@ -49,4 +53,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.foundation:foundation")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2025.04.01"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
