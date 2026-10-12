@@ -23,6 +23,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.platform.ViewConfiguration
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.DpSize
+import kotlin.math.roundToInt
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -77,73 +84,86 @@ internal fun EditorWorkspace(state: ReaderState, onOpen: () -> Unit, onAddFont: 
     fun jumpToPage() { jump = currentPage.toString(); showJump = true }
 
     Column(Modifier.fillMaxSize().background(Color(0xFFF5F7FA)).safeDrawingPadding()) {
-        // A compact title strip and ribbon leave most of a phone screen for the document.
-        Row(Modifier.fillMaxWidth().height(44.dp).background(Color(0xFF173C75)).padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Text("HWP", color = Color.White, fontWeight = FontWeight.Bold)
-            Text(ready?.name ?: "한글 문서", Modifier.weight(1f).padding(horizontal = 12.dp),
-                color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyMedium)
-            TextButton(onClick = onOpen, enabled = !busy) { Text("열기", color = Color.White) }
-        }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-            Box {
-                TextButton(onClick = { fileMenu = true }) { Text("파일") }
-                DropdownMenu(fileMenu, { fileMenu = false }) {
-                    DropdownMenuItem(text = { Text("문서 열기") }, enabled = !busy,
-                        onClick = { fileMenu = false; onOpen() })
-                    DropdownMenuItem(text = { Text("글꼴 추가") }, enabled = !busy,
-                        onClick = { fileMenu = false; onAddFont() })
-                    HorizontalDivider()
-                    DropdownMenuItem(text = { Text("저장") }, enabled = false, onClick = {})
-                    DropdownMenuItem(text = { Text("다른 이름으로 저장") }, enabled = false, onClick = {})
-                    DropdownMenuItem(text = { Text("문서 닫기") }, enabled = document != null && !busy,
-                        onClick = { fileMenu = false; onClose() })
-                    Text("현재 읽기 전용입니다.", Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            for (name in listOf("홈", "삽입", "보기")) {
-                TextButton(onClick = { tab = name }, modifier = Modifier.background(
-                    if (tab == name) Color(0xFFE3EBF8) else Color.Transparent)) {
-                    Text(name, fontWeight = if (tab == name) FontWeight.Bold else FontWeight.Normal)
-                }
-            }
-            TextButton(onClick = { help = true }) { Text("도움말") }
-        }
-        HorizontalDivider()
-        Row(Modifier.fillMaxWidth().height(48.dp).background(Color.White)
-            .horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            when (tab) {
-                "홈" -> {
-                    TextButton(onClick = { textMode = !textMode }, enabled = document != null) {
-                        Text(if (textMode) "원본 보기" else "텍스트 복사")
-                    }
-                    TextButton(onClick = onAddFont, enabled = !busy) { Text("글꼴 추가") }
-                    VerticalDivider(Modifier.height(24.dp))
-                    TextButton(onClick = {}, enabled = false) { Text("↶ 실행 취소") }
-                    TextButton(onClick = {}, enabled = false) { Text("↷ 다시 실행") }
-                }
-                "삽입" -> {
-                    for (name in listOf("표", "그림", "도형", "수식", "차트")) {
-                        TextButton(onClick = {}, enabled = false) { Text(name) }
-                    }
-                    Text("삽입 기능 준비 중", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                "보기" -> {
-                    TextButton(onClick = { zoom = 1f; scope.launch { horizontal.scrollTo(0) } },
-                        enabled = document != null && !textMode) { Text("폭 맞춤") }
-                    TextButton(onClick = { textMode = !textMode }, enabled = document != null) {
-                        Text(if (textMode) "원본 보기" else "텍스트 보기")
-                    }
-                    TextButton(onClick = { jumpToPage() }, enabled = document != null) { Text("쪽 이동") }
-                    TextButton(onClick = onAddFont, enabled = !busy) { Text("글꼴 추가") }
-                }
+        val viewConfiguration = LocalViewConfiguration.current
+        val compactConfiguration = remember(viewConfiguration) {
+            object : ViewConfiguration by viewConfiguration {
+                override val minimumTouchTargetSize = DpSize(
+                    viewConfiguration.minimumTouchTargetSize.width / .8f,
+                    viewConfiguration.minimumTouchTargetSize.height / .8f)
             }
         }
-        HorizontalDivider()
+        // Keep physical touch targets at their original size while shrinking the chrome.
+        CompositionLocalProvider(LocalViewConfiguration provides compactConfiguration) {
+            Column(Modifier.fillMaxWidth().compactTopUi()) {
+                // A compact title strip and ribbon leave most of a phone screen for the document.
+                Row(Modifier.fillMaxWidth().height(44.dp).background(Color(0xFF173C75)).padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("HWP", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(ready?.name ?: "한글 문서", Modifier.weight(1f).padding(horizontal = 12.dp),
+                        color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyMedium)
+                    TextButton(onClick = onOpen, enabled = !busy) { Text("열기", color = Color.White) }
+                }
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                    Box {
+                        TextButton(onClick = { fileMenu = true }) { Text("파일") }
+                        DropdownMenu(fileMenu, { fileMenu = false }) {
+                            DropdownMenuItem(text = { Text("문서 열기") }, enabled = !busy,
+                                onClick = { fileMenu = false; onOpen() })
+                            DropdownMenuItem(text = { Text("글꼴 추가") }, enabled = !busy,
+                                onClick = { fileMenu = false; onAddFont() })
+                            HorizontalDivider()
+                            DropdownMenuItem(text = { Text("저장") }, enabled = false, onClick = {})
+                            DropdownMenuItem(text = { Text("다른 이름으로 저장") }, enabled = false, onClick = {})
+                            DropdownMenuItem(text = { Text("문서 닫기") }, enabled = document != null && !busy,
+                                onClick = { fileMenu = false; onClose() })
+                            Text("현재 읽기 전용입니다.", Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    for (name in listOf("홈", "삽입", "보기")) {
+                        TextButton(onClick = { tab = name }, modifier = Modifier.background(
+                            if (tab == name) Color(0xFFE3EBF8) else Color.Transparent)) {
+                            Text(name, fontWeight = if (tab == name) FontWeight.Bold else FontWeight.Normal)
+                        }
+                    }
+                    TextButton(onClick = { help = true }) { Text("도움말") }
+                }
+                HorizontalDivider()
+                Row(Modifier.fillMaxWidth().height(48.dp).background(Color.White)
+                    .horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    when (tab) {
+                        "홈" -> {
+                            TextButton(onClick = { textMode = !textMode }, enabled = document != null) {
+                                Text(if (textMode) "원본 보기" else "텍스트 복사")
+                            }
+                            TextButton(onClick = onAddFont, enabled = !busy) { Text("글꼴 추가") }
+                            VerticalDivider(Modifier.height(24.dp))
+                            TextButton(onClick = {}, enabled = false) { Text("↶ 실행 취소") }
+                            TextButton(onClick = {}, enabled = false) { Text("↷ 다시 실행") }
+                        }
+                        "삽입" -> {
+                            for (name in listOf("표", "그림", "도형", "수식", "차트")) {
+                                TextButton(onClick = {}, enabled = false) { Text(name) }
+                            }
+                            Text("삽입 기능 준비 중", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        "보기" -> {
+                            TextButton(onClick = { zoom = 1f; scope.launch { horizontal.scrollTo(0) } },
+                                enabled = document != null && !textMode) { Text("폭 맞춤") }
+                            TextButton(onClick = { textMode = !textMode }, enabled = document != null) {
+                                Text(if (textMode) "원본 보기" else "텍스트 보기")
+                            }
+                            TextButton(onClick = { jumpToPage() }, enabled = document != null) { Text("쪽 이동") }
+                            TextButton(onClick = onAddFont, enabled = !busy) { Text("글꼴 추가") }
+                        }
+                    }
+                }
+                HorizontalDivider()
+            }
+        }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (state) {
                 ReaderState.Empty -> Column(Modifier.align(Alignment.Center).padding(24.dp),
@@ -227,5 +247,21 @@ internal fun EditorWorkspace(state: ReaderState, onOpen: () -> Unit, onAddFont: 
             text = { Text("위아래로 스크롤해 다음 쪽을 읽습니다. 두 손가락이나 아래 배율 버튼으로 확대하고, 확대된 문서는 좌우로 이동할 수 있습니다.\n\n파일 메뉴에서 문서와 글꼴을 열 수 있습니다. 원본 글꼴이 없으면 대체 글꼴을 사용합니다.\n\n현재 읽기 전용이며 삽입·편집·저장은 아직 지원하지 않습니다." +
                 if (document?.warnings?.isNotEmpty() == true) "\n\n문서 경고:\n" + document.warnings.take(10).joinToString("\n") else "") },
             confirmButton = { TextButton(onClick = { help = false }) { Text("확인") } })
+    }
+}
+
+
+private fun Modifier.compactTopUi() = layout { measurable, constraints ->
+    val scale = .8f
+    fun expand(value: Int) = if (value == Constraints.Infinity) value else (value / scale).roundToInt()
+    val child = measurable.measure(constraints.copy(
+        minWidth = expand(constraints.minWidth), maxWidth = expand(constraints.maxWidth),
+        minHeight = expand(constraints.minHeight), maxHeight = expand(constraints.maxHeight)))
+    layout((child.width * scale).roundToInt(), (child.height * scale).roundToInt()) {
+        child.placeWithLayer(0, 0) {
+            scaleX = scale
+            scaleY = scale
+            transformOrigin = TransformOrigin(0f, 0f)
+        }
     }
 }
