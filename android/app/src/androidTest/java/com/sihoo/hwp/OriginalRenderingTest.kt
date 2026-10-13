@@ -37,7 +37,7 @@ class OriginalRenderingTest {
                 ?: error("왼쪽 글자 위치에서 커서를 찾지 못했습니다.")
             val right = NativeReader.hitTest(document.id, 0, run.x + run.width - .1f, middleY)
                 ?: error("오른쪽 글자 위치에서 커서를 찾지 못했습니다.")
-            assertTrue("hit test must resolve the tapped paragraph", left.section == run.section &&
+            assertTrue("run=$run, left=$left, right=$right", left.section == run.section &&
                 left.paragraph == run.paragraph && right.section == run.section && right.paragraph == run.paragraph)
             assertTrue("caret offsets must follow tap position", left.offset <= right.offset)
             val paragraphLength = run.text.codePointCount(0, run.text.length)
