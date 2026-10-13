@@ -253,6 +253,75 @@ fn edit_paragraph(id: i64, section: u32, paragraph: u32, before: &str, after: &s
     invalidate_pages(session);
     json!({"ok": true, "changed": true, "state": editor_state(session)})
 }
+fn edit_text_run(id: i64, command: &str) -> Value {
+    let args: Value = match serde_json::from_str(command) {
+        Ok(value) => value, Err(error) => return failure("INVALID_TEXT", error),
+    };
+    let number = |key: &str| args[key].as_u64().map(|v| v as usize);
+    let (Some(section), Some(paragraph), Some(start)) =
+        (number("section"), number("paragraph"), number("start")) else {
+        return failure("INVALID_TEXT", "본문 위치가 필요합니다.");
+    };
+    let before = args["before"].as_str().unwrap_or("");
+    let after = args["after"].as_str().unwrap_or("");
+    if before.is_empty() || before.chars().count() > MAX_EDITABLE_PARAGRAPH
+        || after.chars().count() > MAX_EDITABLE_PARAGRAPH
+        || after.chars().any(|ch| matches!(ch as u32, 0..=8 | 11..=31 | 127)) {
+        return failure("INVALID_TEXT", "선택한 글 범위가 너무 크거나 입력할 수 없는 문자가 있습니다.");
+    }
+    let path: Vec<(usize, usize, usize)> = match args["cellPath"].as_array() {
+        Some(items) => match items.iter().map(|item| {
+            let values = item.as_array().ok_or_else(|| "표 셀 위치가 올바르지 않습니다.".to_owned())?;
+            if values.len() != 3 { return Err("표 셀 위치가 올바르지 않습니다.".to_owned()); }
+            let a = values[0].as_u64().ok_or_else(|| "표 셀 위치가 올바르지 않습니다.".to_owned())? as usize;
+            let b = values[1].as_u64().ok_or_else(|| "표 셀 위치가 올바르지 않습니다.".to_owned())? as usize;
+            let c = values[2].as_u64().ok_or_else(|| "표 셀 위치가 올바르지 않습니다.".to_owned())? as usize;
+            Ok((a, b, c))
+        }).collect::<Result<Vec<_>, String>>() {
+            Ok(path) => path, Err(error) => return failure("INVALID_TEXT", error),
+        },
+        None => return failure("INVALID_TEXT", "표 셀 위치가 올바르지 않습니다."),
+    };
+    if path.len() > 8 { return failure("INVALID_TEXT", "중첩 표 깊이가 너무 큽니다."); }
+    let mut sessions = match sessions().lock() {
+        Ok(sessions) => sessions, Err(_) => return failure("ENGINE_ERROR", "문서 엔진 상태를 복구하지 못했습니다."),
+    };
+    let Some(session) = sessions.get_mut(&id) else {
+        return failure("CLOSED_DOCUMENT", "문서가 닫혔습니다. 다시 열어 주세요.");
+    };
+    if !session.can_edit { return failure("READ_ONLY", session.edit_reason.clone()); }
+    let old_len = before.chars().count();
+    let current = if path.is_empty() {
+        session.core.get_text_range_native(section, paragraph, start, start + old_len)
+    } else {
+        session.core.get_text_in_cell_by_path(section, paragraph, &path, start, old_len)
+    };
+    let current = match current { Ok(text) => text, Err(error) => return failure("EDIT_ERROR", error) };
+    if current != before { return failure("STALE_TEXT", "쪽이 다시 배치되었습니다. 글자를 다시 선택해 주세요."); }
+    if before == after { return json!({"ok": true, "changed": false, "state": editor_state(session)}); }
+    let snapshot = session.core.save_snapshot_native();
+    let result = if path.is_empty() {
+        session.core.replace_text_native(section, paragraph, start, old_len, after)
+    } else {
+        let delete = session.core.delete_text_in_cell_by_path(section, paragraph, &path, start, old_len);
+        delete.and_then(|_| if after.is_empty() { Ok("{}".to_owned()) }
+            else { session.core.insert_text_in_cell_by_path(section, paragraph, &path, start, after) })
+    };
+    if let Err(error) = result {
+        let _ = session.core.restore_snapshot_native(snapshot);
+        session.core.discard_snapshot_native(snapshot);
+        return failure("EDIT_ERROR", error);
+    }
+    for previous in session.redo.drain(..) { session.core.discard_snapshot_native(previous); }
+    session.undo.push(snapshot);
+    if session.undo.len() > MAX_HISTORY {
+        let expired = session.undo.remove(0);
+        session.core.discard_snapshot_native(expired);
+    }
+    session.dirty = true;
+    invalidate_pages(session);
+    json!({"ok": true, "state": editor_state(session)})
+}
 fn history(id: i64, redo: bool) -> Value {
     let mut sessions = match sessions().lock() {
         Ok(sessions) => sessions,
@@ -296,26 +365,46 @@ fn mutate_document(id: i64, command: &str) -> Value {
     };
     let operation = args["operation"].as_str().unwrap_or("");
     let props = args["properties"].to_string();
+    let path: Vec<(usize, usize, usize)> = args["properties"]["cellPath"].as_array()
+        .map(|items| items.iter().filter_map(|item| Some((
+            item.get(0)?.as_u64()? as usize,
+            item.get(1)?.as_u64()? as usize,
+            item.get(2)?.as_u64()? as usize,
+        ))).collect()).unwrap_or_default();
     let snapshot = session.core.save_snapshot_native();
     let result = match operation {
         "characterFormat" => {
-            let length = session.core.get_paragraph_length_native(section, paragraph).unwrap_or(0);
-            session.core.apply_char_format_native(section, paragraph, 0, length, &props).map(|_| ())
+            let start = args["properties"]["start"].as_u64().unwrap_or(0) as usize;
+            let end = args["properties"]["end"].as_u64().unwrap_or_else(||
+                session.core.get_paragraph_length_native(section, paragraph).unwrap_or(0) as u64) as usize;
+            if path.is_empty() {
+                session.core.apply_char_format_native(section, paragraph, start, end, &props).map(|_| ())
+            } else {
+                session.core.apply_char_format_in_cell_by_path(section, paragraph, &path, start, end, &props).map(|_| ())
+            }
         }
-        "paragraphFormat" => session.core.apply_para_format_native(section, paragraph, &props).map(|_| ()),
+        "paragraphFormat" => if path.len() == 1 {
+            let (control, cell, cell_para) = path[0];
+            session.core.apply_para_format_in_cell_native(section, paragraph, control, cell, cell_para, &props).map(|_| ())
+        } else if path.len() > 1 {
+            return failure("EDIT_ERROR", "중첩 표 문단 정렬은 아직 지원하지 않습니다.");
+        } else { session.core.apply_para_format_native(section, paragraph, &props).map(|_| ()) },
         "insertTable" => {
             let rows = args["rows"].as_u64().unwrap_or(2).clamp(1, 50) as u16;
             let columns = args["columns"].as_u64().unwrap_or(2).clamp(1, 20) as u16;
-            let offset = session.core.get_paragraph_length_native(section, paragraph).unwrap_or(0);
+            let offset = args["properties"]["offset"].as_u64().map(|v| v as usize)
+                .unwrap_or_else(|| session.core.get_paragraph_length_native(section, paragraph).unwrap_or(0));
             session.core.create_table_native(section, paragraph, offset, rows, columns).map(|_| ())
         }
         "insertEquation" => {
-            let offset = session.core.get_paragraph_length_native(section, paragraph).unwrap_or(0);
+            let offset = args["properties"]["offset"].as_u64().map(|v| v as usize)
+                .unwrap_or_else(|| session.core.get_paragraph_length_native(section, paragraph).unwrap_or(0));
             let script = args["script"].as_str().unwrap_or("x = y");
             session.core.insert_equation_native(section, paragraph, offset, script, 1000, 0).map(|_| ())
         }
         "insertShape" => {
-            let offset = session.core.get_paragraph_length_native(section, paragraph).unwrap_or(0);
+            let offset = args["properties"]["offset"].as_u64().map(|v| v as usize)
+                .unwrap_or_else(|| session.core.get_paragraph_length_native(section, paragraph).unwrap_or(0));
             session.core.create_shape_control_native(section, paragraph, offset, 18_000, 10_000,
                 0, 0, true, "TopAndBottom", "rectangle", false, false, &[]).map(|_| ())
         }
@@ -342,7 +431,7 @@ fn mutate_document(id: i64, command: &str) -> Value {
     invalidate_pages(session);
     json!({"ok": true, "state": editor_state(session)})
 }
-fn insert_picture(id: i64, section: usize, paragraph: usize, data: &[u8], extension: &str,
+fn insert_picture(id: i64, section: usize, paragraph: usize, offset: usize, data: &[u8], extension: &str,
     width: u32, height: u32) -> Value {
     if data.is_empty() || data.len() > 8 * 1024 * 1024 {
         return failure("INVALID_IMAGE", "그림 파일은 8 MiB 이하로 선택해 주세요.");
@@ -359,9 +448,10 @@ fn insert_picture(id: i64, section: usize, paragraph: usize, data: &[u8], extens
         return failure("CLOSED_DOCUMENT", "문서가 닫혔습니다. 다시 열어 주세요.");
     };
     if !session.can_edit { return failure("READ_ONLY", session.edit_reason.clone()); }
-    let offset = match session.core.get_paragraph_length_native(section, paragraph) {
-        Ok(offset) => offset, Err(error) => return failure("EDIT_ERROR", error),
+    let length = match session.core.get_paragraph_length_native(section, paragraph) {
+        Ok(length) => length, Err(error) => return failure("EDIT_ERROR", error),
     };
+    if offset > length { return failure("EDIT_ERROR", "그림을 넣을 글 위치가 변경되었습니다."); }
     let natural_width = width.max(1);
     let natural_height = height.max(1);
     let scale = (30_000.0 / (natural_width.max(natural_height) as f64 * 75.0)).min(1.0);
@@ -427,6 +517,30 @@ fn placeholders(node: &RenderNode) -> usize {
     usize::from(node.visible && matches!(node.node_type, RenderNodeType::Placeholder(_)))
         + node.children.iter().map(placeholders).sum::<usize>()
 }
+fn collect_text_runs(node: &RenderNode, output: &mut Vec<Value>) {
+    if let RenderNodeType::TextRun(run) = &node.node_type {
+        if node.visible && run.display_text.is_none() && !run.text.is_empty()
+            && !run.text.chars().any(|ch| ch < ' ' || ch == '\u{7f}')
+        {
+            if let (Some(section), Some(paragraph), Some(start)) =
+                (run.section_index, run.para_index, run.char_start)
+            {
+                let cell_path = run.cell_context.as_ref().filter(|context| !context.in_textbox)
+                    .map(|context| context.path.iter().map(|entry| json!([
+                        entry.control_index, entry.cell_index, entry.cell_para_index
+                    ])).collect::<Vec<_>>()).unwrap_or_default();
+                if run.cell_context.as_ref().is_none_or(|context| !context.in_textbox) {
+                    let target_paragraph = run.cell_context.as_ref()
+                        .map(|context| context.parent_para_index).unwrap_or(paragraph);
+                    output.push(json!({"section": section, "paragraph": target_paragraph, "start": start,
+                        "text": run.text, "x": node.bbox.x, "y": node.bbox.y,
+                        "width": node.bbox.width, "height": node.bbox.height, "cellPath": cell_path}));
+                }
+            }
+        }
+    }
+    for child in &node.children { collect_text_runs(child, output); }
+}
 fn render_page(id: i64, index: u32) -> Value {
     let mut sessions = match sessions().lock() {
         Ok(sessions) => sessions,
@@ -459,6 +573,12 @@ fn render_page(id: i64, index: u32) -> Value {
     if let Err(error) = std::fs::write(&layout_path, tree.root.to_json()) {
         return failure("CACHE_ERROR", error);
     }
+    let mut text_runs = Vec::new();
+    collect_text_runs(&tree.root, &mut text_runs);
+    let text_runs_path = session.dir.join(format!("{index}-text.json"));
+    if let Err(error) = std::fs::write(&text_runs_path, serde_json::to_vec(&text_runs).unwrap_or_default()) {
+        return failure("CACHE_ERROR", error);
+    }
     if unresolved > 0 {
         warnings.push(format!("이 쪽에 표시 엔진이 해석하지 못한 개체 {unresolved}개가 있습니다."));
     }
@@ -467,12 +587,14 @@ fn render_page(id: i64, index: u32) -> Value {
         Err(error) => { warnings.push(format!("본문 텍스트 추출 실패: {error}")); String::new() }
     };
     let reply = json!({"ok": true, "index": index, "svgPath": path.to_string_lossy(), "layoutPath": layout_path.to_string_lossy(),
+        "textRunsPath": text_runs_path.to_string_lossy(),
         "text": text, "warnings": warnings, "unresolvedObjects": unresolved});
     session.cache.push_back((index, reply.clone()));
     while session.cache.len() > CACHE_PAGES {
         if let Some((old, _)) = session.cache.pop_front() {
             let _ = std::fs::remove_file(session.dir.join(format!("{old}.svg")));
             let _ = std::fs::remove_file(session.dir.join(format!("{old}.json")));
+            let _ = std::fs::remove_file(session.dir.join(format!("{old}-text.json")));
         }
     }
     reply
@@ -562,12 +684,24 @@ mod android {
         reply(env, value)
     }
     #[no_mangle]
+    pub extern "system" fn Java_com_sihoo_hwp_NativeReader_editTextRunNative(
+        mut env: JNIEnv, _reader: JObject, id: jlong, command: JString,
+    ) -> jstring {
+        let value = catch_unwind(AssertUnwindSafe(|| {
+            let command: String = match env.get_string(&command) {
+                Ok(value) => value.into(), Err(error) => return failure("JNI_ERROR", error),
+            };
+            edit_text_run(id, &command)
+        })).unwrap_or_else(|_| failure("ENGINE_ERROR", "쪽의 글을 수정하는 중 오류가 발생했습니다."));
+        reply(env, value)
+    }
+    #[no_mangle]
     pub extern "system" fn Java_com_sihoo_hwp_NativeReader_insertPictureNative(
-        mut env: JNIEnv, _reader: JObject, id: jlong, section: jint, paragraph: jint,
+        mut env: JNIEnv, _reader: JObject, id: jlong, section: jint, paragraph: jint, offset: jint,
         data: JByteArray, extension: JString, width: jint, height: jint,
     ) -> jstring {
         let value = catch_unwind(AssertUnwindSafe(|| {
-            if section < 0 || paragraph < 0 || width <= 0 || height <= 0 {
+            if section < 0 || paragraph < 0 || offset < 0 || width <= 0 || height <= 0 {
                 return failure("INVALID_IMAGE", "그림 정보가 올바르지 않습니다.");
             }
             let bytes = match env.convert_byte_array(&data) {
@@ -576,7 +710,7 @@ mod android {
             let extension: String = match env.get_string(&extension) {
                 Ok(value) => value.into(), Err(error) => return failure("JNI_ERROR", error),
             };
-            insert_picture(id, section as usize, paragraph as usize, &bytes, &extension,
+            insert_picture(id, section as usize, paragraph as usize, offset as usize, &bytes, &extension,
                 width as u32, height as u32)
         })).unwrap_or_else(|_| failure("ENGINE_ERROR", "그림을 삽입하는 중 오류가 발생했습니다."));
         reply(env, value)

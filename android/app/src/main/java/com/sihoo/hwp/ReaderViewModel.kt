@@ -111,7 +111,20 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             catch (error: Exception) { mutableState.value = ready.copy(message = error.message ?: "문서를 수정하지 못했습니다.") }
         }
     }
-    fun insertPicture(paragraph: EditorParagraph, uri: Uri) {
+    fun editTextRun(run: PageTextRun, text: String) {
+        val ready = mutableState.value as? ReaderState.Ready ?: return
+        if (!ready.document.editing.canEdit || mutableState.value is ReaderState.Loading) return
+        mutableState.value = ReaderState.Loading("쪽의 글을 수정하고 있습니다…")
+        viewModelScope.launch {
+            try {
+                val editing = withContext(Dispatchers.IO) { NativeReader.editTextRun(ready.document.id, run, text) }
+                mutableState.value = ready.copy(document = ready.document.copy(
+                    totalPages = editing.totalPages, editing = editing, revision = ready.document.revision + 1), message = null)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { mutableState.value = ready.copy(message = error.message ?: "글을 수정하지 못했습니다.") }
+        }
+    }
+    fun insertPicture(run: PageTextRun, uri: Uri) {
         val ready = mutableState.value as? ReaderState.Ready ?: return
         if (!ready.document.editing.canEdit || mutableState.value is ReaderState.Loading) return
         mutableState.value = ReaderState.Loading("그림을 삽입하고 있습니다…")
@@ -135,7 +148,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                     }
                     val extension = name.substringAfterLast('.', mimeExtension.ifBlank { "png" }).lowercase()
                     require(bounds.outWidth.toLong() * bounds.outHeight <= 16_000_000) { "그림은 1,600만 화소 이하로 선택해 주세요." }
-                    NativeReader.insertPicture(ready.document.id, paragraph.section, paragraph.paragraph,
+                    NativeReader.insertPicture(ready.document.id, run,
                         bytes, extension, bounds.outWidth, bounds.outHeight)
                 }
                 mutableState.value = ready.copy(document = ready.document.copy(
