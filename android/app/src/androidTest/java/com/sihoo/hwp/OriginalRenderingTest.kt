@@ -22,6 +22,30 @@ import org.junit.runner.RunWith
 class OriginalRenderingTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
+    @Test fun mapsRenderedTextTapsToCaretOffsets() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val document = NativeReader.open(
+            instrumentation.context.assets.open("fixtures/sample.hwpx").use { it.readBytes() },
+            FontStore.prepare(context), File(context.cacheDir, "caret-hit-test"))
+        try {
+            val run = NativeReader.page(document.id, 0).textRuns.first {
+                it.cellPath.isEmpty() && it.text.isNotBlank() && it.width > 1f
+            }
+            val middleY = run.y + run.height / 2f
+            val left = NativeReader.hitTest(document.id, 0, run.x + .1f, middleY)
+                ?: error("왼쪽 글자 위치에서 커서를 찾지 못했습니다.")
+            val right = NativeReader.hitTest(document.id, 0, run.x + run.width - .1f, middleY)
+                ?: error("오른쪽 글자 위치에서 커서를 찾지 못했습니다.")
+            assertTrue("hit test must resolve the tapped paragraph", left.section == run.section &&
+                left.paragraph == run.paragraph && right.section == run.section && right.paragraph == run.paragraph)
+            assertTrue("caret offsets must follow tap position", left.offset <= right.offset)
+            val paragraphLength = run.text.codePointCount(0, run.text.length)
+            assertTrue("left caret must stay inside the rendered run", left.offset in run.start..(run.start + paragraphLength))
+            assertTrue("right caret must stay inside the rendered run", right.offset in run.start..(run.start + paragraphLength))
+        } finally { NativeReader.close(document.id) }
+    }
+
     @Test fun rendersObjectsThroughJniAndNativeCanvas() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
