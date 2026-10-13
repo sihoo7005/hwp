@@ -39,8 +39,8 @@ private data class LoadedPage(val content: RenderedPage, val drawing: CanvasPage
 @Composable
 fun PageViewer(document: ReadDocument, index: Int, textMode: Boolean,
     modifier: Modifier = Modifier) {
-    var attempt by remember(document.id, index) { mutableIntStateOf(0) }
-    val page by produceState<Result<LoadedPage>?>(null, document.id, index, attempt) {
+    var attempt by remember(document.id, index, document.revision) { mutableIntStateOf(0) }
+    val page by produceState<Result<LoadedPage>?>(null, document.id, index, attempt, document.revision) {
         value = null
         value = try {
             Result.success(withContext(Dispatchers.IO) {
