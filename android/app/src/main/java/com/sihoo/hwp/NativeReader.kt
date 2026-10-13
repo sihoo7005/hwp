@@ -13,10 +13,12 @@ data class ReadDocument(
     val revision: Int = 0,
 )
 data class EditorParagraph(val section: Int, val paragraph: Int, val text: String, val editable: Boolean)
+data class EditorObject(val section: Int, val paragraph: Int, val controlIndex: Int, val kind: String)
 data class EditorState(
     val canEdit: Boolean,
     val reason: String,
     val paragraphs: List<EditorParagraph>,
+    val objects: List<EditorObject>,
     val dirty: Boolean,
     val canUndo: Boolean,
     val canRedo: Boolean,
@@ -30,6 +32,9 @@ object NativeReader {
     private external fun renderPage(id: Long, index: Int): String
     private external fun editParagraph(id: Long, section: Int, paragraph: Int, before: String, after: String): String
     private external fun historyNative(id: Long, redo: Boolean): String
+    private external fun mutateNative(id: Long, command: String): String
+    private external fun insertPictureNative(id: Long, section: Int, paragraph: Int,
+        data: ByteArray, extension: String, width: Int, height: Int): String
     private external fun exportDocument(id: Long): ByteArray
     private external fun markSaved(id: Long)
     private external fun closeDocument(id: Long)
@@ -48,6 +53,8 @@ object NativeReader {
         return EditorState(state.optBoolean("canEdit"), state.optString("reason"),
             state.optJSONArray("paragraphs")?.objects()?.map {
                 EditorParagraph(it.getInt("section"), it.getInt("paragraph"), it.getString("text"), it.getBoolean("editable"))
+            }.orEmpty(), state.optJSONArray("objects")?.objects()?.map {
+                EditorObject(it.getInt("section"), it.getInt("paragraph"), it.getInt("controlIndex"), it.getString("kind"))
             }.orEmpty(), state.optBoolean("dirty"), state.optBoolean("canUndo"), state.optBoolean("canRedo"),
             state.optInt("totalPages"))
     }
@@ -57,6 +64,15 @@ object NativeReader {
     }
     fun history(id: Long, redo: Boolean): EditorState {
         val value = result(historyNative(id, redo))
+        return editorState(value.getJSONObject("state"))
+    }
+    fun mutate(id: Long, command: JSONObject): EditorState {
+        val value = result(mutateNative(id, command.toString()))
+        return editorState(value.getJSONObject("state"))
+    }
+    fun insertPicture(id: Long, section: Int, paragraph: Int, data: ByteArray,
+        extension: String, width: Int, height: Int): EditorState {
+        val value = result(insertPictureNative(id, section, paragraph, data, extension, width, height))
         return editorState(value.getJSONObject("state"))
     }
     fun export(id: Long): ByteArray = exportDocument(id)

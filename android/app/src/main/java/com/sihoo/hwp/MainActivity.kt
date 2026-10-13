@@ -14,6 +14,7 @@ import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,18 +56,26 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun ReaderScreen(reader: ReaderViewModel = viewModel()) {
     val state by reader.state.collectAsStateWithLifecycle()
+    var pendingPictureTarget by remember { mutableStateOf<EditorParagraph?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(reader::open) }
     val fonts = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(reader::addFont) }
+    val pictures = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        pendingPictureTarget?.let { target -> uri?.let { reader.insertPicture(target, it) } }
+    }
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { it?.let(reader::save) }
     EditorWorkspace(state, { picker.launch(arrayOf("*/*")) },
         { fonts.launch(arrayOf("*/*")) }, reader::close,
-        onSave = { save.launch(it) }, onEdit = reader::edit, onHistory = reader::history)
+        onSave = { save.launch(it) }, onEdit = reader::edit, onHistory = reader::history,
+        onMutate = { paragraph, operation, properties -> reader.mutate(paragraph, operation, properties) },
+        onInsertPicture = { paragraph -> pendingPictureTarget = paragraph; pictures.launch(arrayOf("image/*")) })
 }
 
 @Composable
 internal fun EditorWorkspace(state: ReaderState, onOpen: () -> Unit, onAddFont: () -> Unit,
     onClose: () -> Unit = {}, onSave: (String) -> Unit = {},
-    onEdit: (EditorParagraph, String) -> Unit = { _, _ -> }, onHistory: (Boolean) -> Unit = {}) {
+    onEdit: (EditorParagraph, String) -> Unit = { _, _ -> }, onHistory: (Boolean) -> Unit = {},
+    onMutate: (EditorParagraph, String, JSONObject) -> Unit = { _, _, _ -> },
+    onInsertPicture: (EditorParagraph) -> Unit = {}) {
     val ready = state as? ReaderState.Ready
     val document = ready?.document
     val busy = state is ReaderState.Loading
@@ -79,6 +89,11 @@ internal fun EditorWorkspace(state: ReaderState, onOpen: () -> Unit, onAddFont: 
     var zoom by remember(document?.id) { mutableFloatStateOf(1f) }
     var textMode by rememberSaveable(document?.id) { mutableStateOf(false) }
     var showJump by remember(document?.id) { mutableStateOf(false) }
+    var selectedParagraph by remember(document?.id) { mutableStateOf<EditorParagraph?>(null) }
+    var insertDialog by remember { mutableStateOf("") }
+    var tableRows by remember { mutableStateOf("2") }
+    var tableColumns by remember { mutableStateOf("2") }
+    var equationScript by remember { mutableStateOf("x = y") }
     var jump by remember(document?.id) { mutableStateOf("") }
     val currentPage by remember(listState) { derivedStateOf { listState.firstVisibleItemIndex + 1 } }
     val zoomGesture = rememberTransformableState { change, offset, _ ->
@@ -149,6 +164,18 @@ internal fun EditorWorkspace(state: ReaderState, onOpen: () -> Unit, onAddFont: 
                             TextButton(onClick = { textMode = !textMode }, enabled = document != null) {
                                 Text(if (textMode) "원본 보기" else if (document?.editing?.canEdit == true) "텍스트 편집" else "텍스트 복사")
                             }
+                            for ((label, props) in listOf(
+                                "굵게" to JSONObject().put("bold", true),
+                                "기울임" to JSONObject().put("italic", true),
+                                "밑줄" to JSONObject().put("underline", true))) {
+                                TextButton(onClick = { selectedParagraph?.let { onMutate(it, "characterFormat", props) } },
+                                    enabled = selectedParagraph != null && !busy && document?.editing?.canEdit == true) { Text(label) }
+                            }
+                            for ((label, alignment) in listOf("왼쪽" to "left", "가운데" to "center", "오른쪽" to "right")) {
+                                TextButton(onClick = { selectedParagraph?.let {
+                                    onMutate(it, "paragraphFormat", JSONObject().put("alignment", alignment))
+                                } }, enabled = selectedParagraph != null && !busy && document?.editing?.canEdit == true) { Text(label) }
+                            }
                             TextButton(onClick = onAddFont, enabled = !busy && document?.editing?.dirty != true) { Text("글꼴 추가") }
                             VerticalDivider(Modifier.height(24.dp))
                             TextButton(onClick = { onHistory(false) }, enabled = document?.editing?.canUndo == true && !busy) { Text("↶ 실행 취소") }
@@ -157,10 +184,16 @@ internal fun EditorWorkspace(state: ReaderState, onOpen: () -> Unit, onAddFont: 
                                 enabled = document?.editing?.let { it.canEdit && it.dirty } == true && !busy) { Text("저장") }
                         }
                         "삽입" -> {
-                            for (name in listOf("표", "그림", "도형", "수식", "차트")) {
-                                TextButton(onClick = {}, enabled = false) { Text(name) }
-                            }
-                            Text("삽입 기능 준비 중", style = MaterialTheme.typography.bodySmall,
+                            TextButton(onClick = { insertDialog = "table" },
+                                enabled = selectedParagraph != null && !busy && document?.editing?.canEdit == true) { Text("표") }
+                            TextButton(onClick = { insertDialog = "equation" },
+                                enabled = selectedParagraph != null && !busy && document?.editing?.canEdit == true) { Text("수식") }
+                            TextButton(onClick = { selectedParagraph?.let {
+                                onMutate(it, "insertShape", JSONObject())
+                            } }, enabled = selectedParagraph != null && !busy && document?.editing?.canEdit == true) { Text("사각형") }
+                            TextButton(onClick = { selectedParagraph?.let(onInsertPicture) },
+                                enabled = selectedParagraph != null && !busy && document?.editing?.canEdit == true) { Text("그림") }
+                            Text("문단을 선택한 뒤 삽입", style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         "보기" -> {
@@ -197,7 +230,7 @@ internal fun EditorWorkspace(state: ReaderState, onOpen: () -> Unit, onAddFont: 
                 }
                 is ReaderState.Ready -> BoxWithConstraints(Modifier.fillMaxSize()) {
                     if (textMode && state.document.editing.canEdit) {
-                        EditorTextView(state.document.editing, onEdit, Modifier.fillMaxSize())
+                        EditorTextView(state.document.editing, onEdit, { selectedParagraph = it }, onMutate, Modifier.fillMaxSize())
                     } else {
                         val pageWidth = (maxWidth - 24.dp) * if (textMode) 1f else zoom
                         val contentWidth = maxOf(maxWidth, pageWidth + 24.dp)
@@ -264,9 +297,35 @@ internal fun EditorWorkspace(state: ReaderState, onOpen: () -> Unit, onAddFont: 
             }) { Text("이동") } },
             dismissButton = { TextButton(onClick = { showJump = false }) { Text("취소") } })
     }
+    if (insertDialog.isNotEmpty()) {
+        val isTable = insertDialog == "table"
+        val valid = if (isTable) tableRows.toIntOrNull()?.let { it in 1..50 } == true &&
+            tableColumns.toIntOrNull()?.let { it in 1..20 } == true
+            else equationScript.isNotBlank()
+        AlertDialog(onDismissRequest = { insertDialog = "" },
+            title = { Text(if (isTable) "표 삽입" else "수식 삽입") },
+            text = {
+                if (isTable) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(tableRows, { tableRows = it.filter(Char::isDigit).take(2) },
+                        label = { Text("행 (1~50)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    OutlinedTextField(tableColumns, { tableColumns = it.filter(Char::isDigit).take(2) },
+                        label = { Text("열 (1~20)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                } else OutlinedTextField(equationScript, { equationScript = it },
+                    label = { Text("수식 표현") }, minLines = 2)
+            },
+            confirmButton = { TextButton(enabled = valid && selectedParagraph != null && !busy, onClick = {
+                selectedParagraph?.let { paragraph ->
+                    if (isTable) onMutate(paragraph, "insertTable", JSONObject()
+                        .put("rows", tableRows.toInt()).put("columns", tableColumns.toInt()))
+                    else onMutate(paragraph, "insertEquation", JSONObject().put("script", equationScript))
+                }
+                insertDialog = ""
+            }) { Text("삽입") } },
+            dismissButton = { TextButton(onClick = { insertDialog = "" }) { Text("취소") } })
+    }
     if (help) {
         AlertDialog(onDismissRequest = { help = false }, title = { Text("문서 사용 안내") },
-            text = { Text("위아래로 스크롤해 다음 쪽을 읽습니다. 두 손가락이나 아래 배율 버튼으로 확대하고, 확대된 문서는 좌우로 이동할 수 있습니다.\n\n파일 메뉴에서 문서와 글꼴을 열 수 있습니다. 원본 글꼴이 없으면 대체 글꼴을 사용합니다.\n\n홈 탭의 텍스트 편집에서 일반 본문 문단을 수정할 수 있습니다. 파일 메뉴에서 편집본을 새 HWP/HWPX 파일로 저장합니다. 표와 개체가 있는 문단은 아직 편집할 수 없습니다." +
+            text = { Text("위아래로 스크롤해 다음 쪽을 읽습니다. 두 손가락이나 아래 배율 버튼으로 확대하고, 확대된 문서는 좌우로 이동할 수 있습니다.\n\n파일 메뉴에서 문서와 글꼴을 열 수 있습니다. 원본 글꼴이 없으면 대체 글꼴을 사용합니다.\n\n텍스트 편집에서 본문을 고른 뒤 홈 탭에서 굵게·기울임·밑줄과 문단 정렬을 적용할 수 있습니다. 삽입 탭에서 2×2 표, 기본 수식, 사각형 도형, 그림을 추가할 수 있습니다. 변경은 실행 취소·다시 실행과 새 HWP/HWPX 저장을 지원합니다. 기존 표 셀과 그림·도형·차트의 세부 수정은 아직 연결 중입니다." +
                 if (document?.warnings?.isNotEmpty() == true) "\n\n문서 경고:\n" + document.warnings.take(10).joinToString("\n") else "") },
             confirmButton = { TextButton(onClick = { help = false }) { Text("확인") } })
     }
@@ -284,18 +343,38 @@ internal fun EditorWorkspace(state: ReaderState, onOpen: () -> Unit, onAddFont: 
 
 
 @Composable
-private fun EditorTextView(state: EditorState, onEdit: (EditorParagraph, String) -> Unit, modifier: Modifier = Modifier) {
+private fun EditorTextView(state: EditorState, onEdit: (EditorParagraph, String) -> Unit,
+    onSelect: (EditorParagraph) -> Unit, onMutate: (EditorParagraph, String, JSONObject) -> Unit,
+    modifier: Modifier = Modifier) {
     var selected by remember { mutableStateOf<EditorParagraph?>(null) }
     var value by remember(selected) { mutableStateOf(selected?.text.orEmpty()) }
     Column(modifier.background(Color.White)) {
-        Text("본문 문단 · 개체가 포함된 문단은 읽기 전용입니다.",
+        Text("본문 문단 · 개체가 있는 문단은 텍스트 대신 개체 도구를 사용하세요.",
             Modifier.fillMaxWidth().background(Color(0xFFEAF0F8)).padding(12.dp),
             style = MaterialTheme.typography.bodySmall)
+        if (state.objects.isNotEmpty()) LazyRow(
+            Modifier.fillMaxWidth().background(Color(0xFFF7F8FA)).padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(state.objects, key = { "${it.section}-${it.paragraph}-${it.controlIndex}" }) { item ->
+                Surface(shape = MaterialTheme.shapes.small, color = Color.White,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD8DEE8))) {
+                    Row(Modifier.padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("${item.kind} · ${item.paragraph + 1}문단", style = MaterialTheme.typography.labelSmall)
+                        TextButton(onClick = { onMutate(EditorParagraph(item.section, item.paragraph, "", false),
+                            "deleteObject", JSONObject().put("controlIndex", item.controlIndex)) },
+                            contentPadding = PaddingValues(horizontal = 6.dp)) { Text("삭제") }
+                    }
+                }
+            }
+        }
         LazyColumn(Modifier.fillMaxSize().testTag("document-text"), contentPadding = PaddingValues(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(state.paragraphs, key = { "${it.section}-${it.paragraph}" }) { paragraph ->
                 Surface(
-                    modifier = Modifier.fillMaxWidth().clickable(enabled = paragraph.editable) { selected = paragraph },
+                    modifier = Modifier.fillMaxWidth().clickable(enabled = paragraph.editable) {
+                        selected = paragraph
+                        onSelect(paragraph)
+                    },
                     color = if (paragraph.editable) Color.White else Color(0xFFF3F4F6),
                     shape = MaterialTheme.shapes.small,
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD8DEE8)),

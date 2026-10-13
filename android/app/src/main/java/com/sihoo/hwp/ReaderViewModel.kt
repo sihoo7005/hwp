@@ -1,12 +1,14 @@
 package com.sihoo.hwp
 
 import android.app.Application
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
+import org.json.JSONObject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -89,6 +91,57 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                     totalPages = editing.totalPages, editing = editing, revision = ready.document.revision + 1), message = null)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { mutableState.value = ready.copy(message = error.message ?: "문단을 수정하지 못했습니다.") }
+        }
+    }
+    fun mutate(paragraph: EditorParagraph, operation: String, properties: JSONObject = JSONObject(),
+        rows: Int = 2, columns: Int = 2, script: String = "x = y") {
+        val ready = mutableState.value as? ReaderState.Ready ?: return
+        if (!ready.document.editing.canEdit || mutableState.value is ReaderState.Loading) return
+        val command = JSONObject().put("operation", operation).put("section", paragraph.section)
+            .put("paragraph", paragraph.paragraph).put("properties", properties)
+            .put("rows", properties.optInt("rows", rows)).put("columns", properties.optInt("columns", columns))
+            .put("script", properties.optString("script", script))
+        mutableState.value = ReaderState.Loading("문서를 수정하고 있습니다…")
+        viewModelScope.launch {
+            try {
+                val editing = withContext(Dispatchers.IO) { NativeReader.mutate(ready.document.id, command) }
+                mutableState.value = ready.copy(document = ready.document.copy(
+                    totalPages = editing.totalPages, editing = editing, revision = ready.document.revision + 1), message = null)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { mutableState.value = ready.copy(message = error.message ?: "문서를 수정하지 못했습니다.") }
+        }
+    }
+    fun insertPicture(paragraph: EditorParagraph, uri: Uri) {
+        val ready = mutableState.value as? ReaderState.Ready ?: return
+        if (!ready.document.editing.canEdit || mutableState.value is ReaderState.Loading) return
+        mutableState.value = ReaderState.Loading("그림을 삽입하고 있습니다…")
+        viewModelScope.launch {
+            try {
+                val editing = withContext(Dispatchers.IO) {
+                    val app = getApplication<Application>()
+                    val bytes = app.contentResolver.openInputStream(uri)?.use { it.readBounded(8 * 1024 * 1024) }
+                        ?: error("그림 파일을 읽을 수 없습니다.")
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                    require(bounds.outWidth > 0 && bounds.outHeight > 0) { "그림 크기를 읽을 수 없습니다." }
+                    val name = app.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                        ?.use { if (it.moveToFirst()) it.getString(0) else null }.orEmpty()
+                    val mimeExtension = when (app.contentResolver.getType(uri)?.lowercase()) {
+                        "image/jpeg" -> "jpg"
+                        "image/png" -> "png"
+                        "image/bmp" -> "bmp"
+                        "image/gif" -> "gif"
+                        else -> ""
+                    }
+                    val extension = name.substringAfterLast('.', mimeExtension.ifBlank { "png" }).lowercase()
+                    require(bounds.outWidth.toLong() * bounds.outHeight <= 16_000_000) { "그림은 1,600만 화소 이하로 선택해 주세요." }
+                    NativeReader.insertPicture(ready.document.id, paragraph.section, paragraph.paragraph,
+                        bytes, extension, bounds.outWidth, bounds.outHeight)
+                }
+                mutableState.value = ready.copy(document = ready.document.copy(
+                    totalPages = editing.totalPages, editing = editing, revision = ready.document.revision + 1), message = null)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { mutableState.value = ready.copy(message = error.message ?: "그림을 삽입하지 못했습니다.") }
         }
     }
     fun history(redo: Boolean) {

@@ -102,7 +102,7 @@ fn supported_hwp_header(bytes: &[u8]) -> bool {
 fn editable_paragraphs(session: &Session) -> Value {
     let allowed_format = session.can_edit;
     if !allowed_format {
-        return json!({"canEdit": false, "reason": session.edit_reason, "paragraphs": []});
+        return json!({"canEdit": false, "reason": session.edit_reason, "paragraphs": [], "objects": []});
     }
     let controls: Vec<Value> = serde_json::from_str(&session.core.controls_json()).unwrap_or_default();
     let info: Value = serde_json::from_str(&session.core.get_document_info()).unwrap_or_default();
@@ -149,8 +149,29 @@ fn editable_paragraphs(session: &Session) -> Value {
     } else {
         ""
     };
+    let mut objects = Vec::new();
+    let mut section_counts = Vec::new();
+    if let Ok(info) = serde_json::from_str::<Value>(&session.core.get_document_info()) {
+        let sections = info["sections"].as_u64().unwrap_or(0) as usize;
+        for section in 0..sections {
+            section_counts.push(session.core.get_paragraph_count_native(section).unwrap_or(0));
+        }
+        if let Ok(raw) = serde_json::from_str::<Vec<Value>>(&session.core.objects_json()) {
+            for item in raw {
+                let Some(mut global) = item["para"].as_u64().map(|v| v as usize) else { continue };
+                for (section, count) in section_counts.iter().enumerate() {
+                    if global < *count {
+                        objects.push(json!({"section": section, "paragraph": global,
+                            "controlIndex": item["controlIndex"], "kind": item["kind"]}));
+                        break;
+                    }
+                    global -= *count;
+                }
+            }
+        }
+    }
     json!({"canEdit": can_edit, "reason": reason,
-        "paragraphs": if limit_exceeded { Vec::<Value>::new() } else { paragraphs }})
+        "paragraphs": if limit_exceeded { Vec::<Value>::new() } else { paragraphs }, "objects": objects})
 }
 fn editor_state(session: &Session) -> Value {
     let mut state = editable_paragraphs(session);
@@ -255,6 +276,114 @@ fn history(id: i64, redo: bool) -> Value {
     session.dirty = true;
     invalidate_pages(session);
     json!({"ok": true, "changed": true, "state": editor_state(session)})
+}
+fn mutate_document(id: i64, command: &str) -> Value {
+    let mut sessions = match sessions().lock() {
+        Ok(sessions) => sessions,
+        Err(_) => return failure("ENGINE_ERROR", "문서 엔진 상태를 복구하지 못했습니다."),
+    };
+    let Some(session) = sessions.get_mut(&id) else {
+        return failure("CLOSED_DOCUMENT", "문서가 닫혔습니다. 다시 열어 주세요.");
+    };
+    if !session.can_edit { return failure("READ_ONLY", session.edit_reason.clone()); }
+    let args: Value = match serde_json::from_str(command) {
+        Ok(value) => value,
+        Err(error) => return failure("INVALID_COMMAND", error),
+    };
+    let number = |key: &str| args[key].as_u64().map(|v| v as usize);
+    let (Some(section), Some(paragraph)) = (number("section"), number("paragraph")) else {
+        return failure("INVALID_COMMAND", "문단 위치가 필요합니다.");
+    };
+    let operation = args["operation"].as_str().unwrap_or("");
+    let props = args["properties"].to_string();
+    let snapshot = session.core.save_snapshot_native();
+    let result = match operation {
+        "characterFormat" => {
+            let length = session.core.get_paragraph_length_native(section, paragraph).unwrap_or(0);
+            session.core.apply_char_format_native(section, paragraph, 0, length, &props).map(|_| ())
+        }
+        "paragraphFormat" => session.core.apply_para_format_native(section, paragraph, &props).map(|_| ()),
+        "insertTable" => {
+            let rows = args["rows"].as_u64().unwrap_or(2).clamp(1, 50) as u16;
+            let columns = args["columns"].as_u64().unwrap_or(2).clamp(1, 20) as u16;
+            let offset = session.core.get_paragraph_length_native(section, paragraph).unwrap_or(0);
+            session.core.create_table_native(section, paragraph, offset, rows, columns).map(|_| ())
+        }
+        "insertEquation" => {
+            let offset = session.core.get_paragraph_length_native(section, paragraph).unwrap_or(0);
+            let script = args["script"].as_str().unwrap_or("x = y");
+            session.core.insert_equation_native(section, paragraph, offset, script, 1000, 0).map(|_| ())
+        }
+        "insertShape" => {
+            let offset = session.core.get_paragraph_length_native(section, paragraph).unwrap_or(0);
+            session.core.create_shape_control_native(section, paragraph, offset, 18_000, 10_000,
+                0, 0, true, "TopAndBottom", "rectangle", false, false, &[]).map(|_| ())
+        }
+        "deleteObject" => {
+            let Some(control) = number("controlIndex") else {
+                return failure("INVALID_COMMAND", "개체 위치가 필요합니다.");
+            };
+            session.core.delete_control_native(section, paragraph, control).map(|_| ())
+        }
+        _ => return failure("INVALID_COMMAND", "지원하지 않는 편집 작업입니다."),
+    };
+    if let Err(error) = result {
+        let _ = session.core.restore_snapshot_native(snapshot);
+        session.core.discard_snapshot_native(snapshot);
+        return failure("EDIT_ERROR", error);
+    }
+    for previous in session.redo.drain(..) { session.core.discard_snapshot_native(previous); }
+    session.undo.push(snapshot);
+    if session.undo.len() > MAX_HISTORY {
+        let expired = session.undo.remove(0);
+        session.core.discard_snapshot_native(expired);
+    }
+    session.dirty = true;
+    invalidate_pages(session);
+    json!({"ok": true, "state": editor_state(session)})
+}
+fn insert_picture(id: i64, section: usize, paragraph: usize, data: &[u8], extension: &str,
+    width: u32, height: u32) -> Value {
+    if data.is_empty() || data.len() > 8 * 1024 * 1024 {
+        return failure("INVALID_IMAGE", "그림 파일은 8 MiB 이하로 선택해 주세요.");
+    }
+    let extension = extension.to_ascii_lowercase();
+    if !matches!(extension.as_str(), "png" | "jpg" | "jpeg" | "bmp" | "gif") {
+        return failure("INVALID_IMAGE", "PNG, JPEG, BMP, GIF 그림만 삽입할 수 있습니다.");
+    }
+    let mut sessions = match sessions().lock() {
+        Ok(sessions) => sessions,
+        Err(_) => return failure("ENGINE_ERROR", "문서 엔진 상태를 복구하지 못했습니다."),
+    };
+    let Some(session) = sessions.get_mut(&id) else {
+        return failure("CLOSED_DOCUMENT", "문서가 닫혔습니다. 다시 열어 주세요.");
+    };
+    if !session.can_edit { return failure("READ_ONLY", session.edit_reason.clone()); }
+    let offset = match session.core.get_paragraph_length_native(section, paragraph) {
+        Ok(offset) => offset, Err(error) => return failure("EDIT_ERROR", error),
+    };
+    let natural_width = width.max(1);
+    let natural_height = height.max(1);
+    let scale = (30_000.0 / (natural_width.max(natural_height) as f64 * 75.0)).min(1.0);
+    let scaled_width = (natural_width as f64 * scale * 75.0).round().max(1.0) as u32;
+    let scaled_height = (natural_height as f64 * scale * 75.0).round().max(1.0) as u32;
+    let snapshot = session.core.save_snapshot_native();
+    if let Err(error) = session.core.insert_picture_native(section, paragraph, offset, &[], data,
+        scaled_width, scaled_height, natural_width, natural_height,
+        if extension == "jpeg" { "jpg" } else { extension.as_str() }, "", None, None) {
+        let _ = session.core.restore_snapshot_native(snapshot);
+        session.core.discard_snapshot_native(snapshot);
+        return failure("EDIT_ERROR", error);
+    }
+    for previous in session.redo.drain(..) { session.core.discard_snapshot_native(previous); }
+    session.undo.push(snapshot);
+    if session.undo.len() > MAX_HISTORY {
+        let expired = session.undo.remove(0);
+        session.core.discard_snapshot_native(expired);
+    }
+    session.dirty = true;
+    invalidate_pages(session);
+    json!({"ok": true, "state": editor_state(session)})
 }
 fn body_texts(core: &DocumentCore) -> Result<Vec<String>, String> {
     let info: Value = serde_json::from_str(&core.get_document_info()).map_err(|e| e.to_string())?;
@@ -418,6 +547,38 @@ mod android {
     ) -> jstring {
         let value = catch_unwind(AssertUnwindSafe(|| history(id, redo != 0)))
             .unwrap_or_else(|_| failure("ENGINE_ERROR", "문서 이력을 복원하는 중 오류가 발생했습니다."));
+        reply(env, value)
+    }
+    #[no_mangle]
+    pub extern "system" fn Java_com_sihoo_hwp_NativeReader_mutateNative(
+        mut env: JNIEnv, _reader: JObject, id: jlong, command: JString,
+    ) -> jstring {
+        let value = catch_unwind(AssertUnwindSafe(|| {
+            let command: String = match env.get_string(&command) {
+                Ok(value) => value.into(), Err(error) => return failure("JNI_ERROR", error),
+            };
+            mutate_document(id, &command)
+        })).unwrap_or_else(|_| failure("ENGINE_ERROR", "문서를 편집하는 중 오류가 발생했습니다."));
+        reply(env, value)
+    }
+    #[no_mangle]
+    pub extern "system" fn Java_com_sihoo_hwp_NativeReader_insertPictureNative(
+        mut env: JNIEnv, _reader: JObject, id: jlong, section: jint, paragraph: jint,
+        data: JByteArray, extension: JString, width: jint, height: jint,
+    ) -> jstring {
+        let value = catch_unwind(AssertUnwindSafe(|| {
+            if section < 0 || paragraph < 0 || width <= 0 || height <= 0 {
+                return failure("INVALID_IMAGE", "그림 정보가 올바르지 않습니다.");
+            }
+            let bytes = match env.convert_byte_array(&data) {
+                Ok(bytes) => bytes, Err(error) => return failure("JNI_ERROR", error),
+            };
+            let extension: String = match env.get_string(&extension) {
+                Ok(value) => value.into(), Err(error) => return failure("JNI_ERROR", error),
+            };
+            insert_picture(id, section as usize, paragraph as usize, &bytes, &extension,
+                width as u32, height as u32)
+        })).unwrap_or_else(|_| failure("ENGINE_ERROR", "그림을 삽입하는 중 오류가 발생했습니다."));
         reply(env, value)
     }
     #[no_mangle]
