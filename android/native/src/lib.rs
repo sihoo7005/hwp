@@ -575,6 +575,12 @@ fn render_page(id: i64, index: u32) -> Value {
     }
     let mut text_runs = Vec::new();
     collect_text_runs(&tree.root, &mut text_runs);
+    text_runs.retain(|run| {
+        let (Some(section), Some(paragraph)) =
+            (run["section"].as_u64(), run["paragraph"].as_u64()) else { return false; };
+        session.core.get_paragraph_count_native(section as usize)
+            .is_ok_and(|count| paragraph < count as u64)
+    });
     let text_runs_path = session.dir.join(format!("{index}-text.json"));
     if let Err(error) = std::fs::write(&text_runs_path, serde_json::to_vec(&text_runs).unwrap_or_default()) {
         return failure("CACHE_ERROR", error);
