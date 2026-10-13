@@ -607,7 +607,7 @@ fn close_document(id: i64) {
 mod android {
     use super::*;
     use jni::objects::{JByteArray, JObject, JString};
-    use jni::sys::{jboolean, jbyteArray, jint, jlong, jstring};
+    use jni::sys::{jboolean, jbyteArray, jfloat, jint, jlong, jstring};
     use jni::JNIEnv;
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
@@ -648,6 +648,31 @@ mod android {
             if index < 0 { failure("PAGE_RANGE", "잘못된 페이지입니다.") }
             else { render_page(id, index as u32) }
         })).unwrap_or_else(|_| failure("ENGINE_ERROR", "페이지를 그리는 중 오류가 발생했습니다."));
+        reply(env, value)
+    }
+    #[no_mangle]
+    pub extern "system" fn Java_com_sihoo_hwp_NativeReader_hitTestPage(
+        env: JNIEnv, _reader: JObject, id: jlong, page: jint, x: jfloat, y: jfloat,
+    ) -> jstring {
+        let value = catch_unwind(AssertUnwindSafe(|| {
+            if page < 0 || !x.is_finite() || !y.is_finite() {
+                return failure("INVALID_POSITION", "쪽 위치가 올바르지 않습니다.");
+            }
+            let mut sessions = match sessions().lock() {
+                Ok(sessions) => sessions,
+                Err(_) => return failure("ENGINE_ERROR", "문서 엔진 상태를 복구하지 못했습니다."),
+            };
+            let Some(session) = sessions.get_mut(&id) else {
+                return failure("CLOSED_DOCUMENT", "문서가 닫혔습니다. 다시 열어 주세요.");
+            };
+            match session.core.hit_test_native(page as u32, x as f64, y as f64) {
+                Ok(hit) => match serde_json::from_str::<Value>(&hit) {
+                    Ok(hit) => json!({"ok": true, "hit": hit}),
+                    Err(error) => failure("HIT_TEST_ERROR", error),
+                },
+                Err(error) => failure("HIT_TEST_ERROR", error),
+            }
+        })).unwrap_or_else(|_| failure("ENGINE_ERROR", "커서 위치를 찾는 중 오류가 발생했습니다."));
         reply(env, value)
     }
     #[no_mangle]

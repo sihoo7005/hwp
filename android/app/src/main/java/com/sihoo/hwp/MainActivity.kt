@@ -211,7 +211,7 @@ internal fun EditorWorkspace(state: ReaderState, onOpen: () -> Unit, onAddFont: 
                             TextButton(onClick = { selectedTextRun?.takeIf { it.cellPath.isEmpty() }?.let(onInsertPicture) },
                                 enabled = selectedParagraph != null && selectedTextRun?.cellPath?.isEmpty() == true &&
                                     !busy && document?.editing?.canEdit == true) { Text("그림") }
-                            Text("쪽의 글자를 누르면 바로 편집", style = MaterialTheme.typography.bodySmall,
+                            Text("글자 위치를 눌러 입력 · 키보드 완료로 반영", style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         "보기" -> {

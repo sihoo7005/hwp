@@ -17,6 +17,8 @@ data class EditorObject(val section: Int, val paragraph: Int, val controlIndex: 
 data class PageTextRun(val section: Int, val paragraph: Int, val start: Int, val text: String,
     val x: Float, val y: Float, val width: Float, val height: Float,
     val cellPath: List<Triple<Int, Int, Int>>)
+data class PageHit(val section: Int, val paragraph: Int, val offset: Int,
+    val cellPath: List<Triple<Int, Int, Int>>)
 data class EditorState(
     val canEdit: Boolean,
     val reason: String,
@@ -34,6 +36,7 @@ object NativeReader {
     init { System.loadLibrary("hwp_reader") }
     private external fun openDocument(data: ByteArray, fonts: String, cache: String): String
     private external fun renderPage(id: Long, index: Int): String
+    private external fun hitTestPage(id: Long, page: Int, x: Float, y: Float): String
     private external fun editParagraph(id: Long, section: Int, paragraph: Int, before: String, after: String): String
     private external fun historyNative(id: Long, redo: Boolean): String
     private external fun mutateNative(id: Long, command: String): String
@@ -103,6 +106,15 @@ object NativeReader {
         }
         return RenderedPage(File(value.getString("svgPath")), File(value.getString("layoutPath")), runs, value.getString("text"),
             value.getJSONArray("warnings").strings())
+    }
+    fun hitTest(id: Long, page: Int, x: Float, y: Float): PageHit? {
+        val result = result(hitTestPage(id, page, x, y)).getJSONObject("hit")
+        val path = result.optJSONArray("cellPath")
+        return PageHit(result.getInt("sectionIndex"), result.getInt("paragraphIndex"),
+            result.getInt("charOffset"), List(path?.length() ?: 0) { i ->
+                    val cell = path!!.getJSONObject(i)
+                    Triple(cell.getInt("controlIndex"), cell.getInt("cellIndex"), cell.getInt("cellParaIndex"))
+                })
     }
     fun close(id: Long) { if (id != 0L) closeDocument(id) }
     private fun JSONArray.strings() = List(length()) { getString(it) }
