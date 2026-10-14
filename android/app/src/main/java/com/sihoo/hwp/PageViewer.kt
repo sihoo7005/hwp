@@ -132,19 +132,23 @@ fun PageViewer(document: ReadDocument, index: Int, textMode: Boolean,
                             })
                         }
                         active?.let { run ->
+                            var receivedFocus by remember(run) { mutableStateOf(false) }
                             val x = (run.x * scale).dp
                             val y = (run.y * scale).dp
                             val runWidth = maxOf((run.width * scale).dp, 48.dp)
                             val fieldWidth = minOf(maxWidth - x, maxOf(runWidth, 80.dp)).coerceAtLeast(48.dp)
                             val fontSize = with(density) { ((run.height * scale).dp.toSp().value * .78f).sp }
                             fun finish() {
-                                active?.let { onEditTextRun(it, value.text) }
+                                active?.takeIf { value.text != it.text }?.let { onEditTextRun(it, value.text) }
                                 active = null
                             }
                             Box(Modifier.offset(x, y).width(fieldWidth).height(maxOf((run.height * scale * 1.35f).dp, 24.dp))
                                 .zIndex(2f).background(Color.White)) {
                                 BasicTextField(value, { value = it }, Modifier.fillMaxSize().focusRequester(focusRequester)
-                                    .onFocusChanged { if (!it.isFocused && active != null) finish() }, singleLine = true,
+                                    .onFocusChanged {
+                                        if (it.isFocused) receivedFocus = true
+                                        else if (receivedFocus) finish()
+                                    }, singleLine = true,
                                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = fontSize, color = Color.Black),
                                     keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
                                     keyboardActions = KeyboardActions(onDone = { finish() }))
