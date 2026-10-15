@@ -1,0 +1,27 @@
+[package]
+name = "hwp-reader"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "hwp_reader"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rhwp = { path = "../vendor/rhwp", default-features = false }
+serde_json = "1"
+cfb = "0.15"
+usvg = "=0.45.1"
+resvg = "=0.45.1"
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "=0.21.1"
+
+# Preserve rhwp's upstream PDF patch; dependency-level patches are not inherited.
+[patch.crates-io]
+svg2pdf = { path = "../vendor/rhwp/vendor/svg2pdf" }
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+strip = "symbols"
