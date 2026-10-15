@@ -32,7 +32,19 @@ struct Session {
     fonts: Option<std::sync::Arc<usvg::fontdb::Database>>,
     undo: Vec<u32>,
     redo: Vec<u32>,
+    active_text_edit: Option<ActiveTextEdit>,
     dirty: bool,
+}
+struct ActiveTextEdit {
+    section: usize,
+    paragraph: usize,
+    start: usize,
+    cell_path: Vec<(usize, usize, usize)>,
+    original: String,
+    current: String,
+    snapshot: u32,
+    dirty_before: bool,
+    char_shape_id: Option<u32>,
 }
 impl Drop for Session {
     fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.dir); }
@@ -82,7 +94,8 @@ fn open_document(bytes: &[u8], font_root: &Path, cache_root: &Path) -> Value {
     };
     let session = Session { core: opened.into_core(), format: format.to_owned(), can_edit,
         edit_reason: edit_reason.to_owned(), dir, options,
-        cache: VecDeque::new(), fonts: None, undo: Vec::new(), redo: Vec::new(), dirty: false };
+        cache: VecDeque::new(), fonts: None, undo: Vec::new(), redo: Vec::new(),
+        active_text_edit: None, dirty: false };
     let editing = editor_state(&session);
     match sessions().lock() {
         Ok(mut sessions) => { sessions.insert(id, session); }
@@ -322,6 +335,155 @@ fn edit_text_run(id: i64, command: &str) -> Value {
     invalidate_pages(session);
     json!({"ok": true, "state": editor_state(session)})
 }
+fn update_text_composition(id: i64, command: &str) -> Value {
+    let args: Value = match serde_json::from_str(command) {
+        Ok(value) => value, Err(error) => return failure("INVALID_TEXT", error),
+    };
+    let number = |key: &str| args[key].as_u64().map(|v| v as usize);
+    let (Some(section), Some(paragraph), Some(start)) =
+        (number("section"), number("paragraph"), number("start")) else {
+        return failure("INVALID_TEXT", "본문 위치가 필요합니다.");
+    };
+    let before = args["before"].as_str().unwrap_or("");
+    let after = args["after"].as_str().unwrap_or("");
+    let requested_char_shape_id = args["charShapeId"].as_u64().map(|id| id as u32);
+    if before.chars().count() > MAX_EDITABLE_PARAGRAPH
+        || after.chars().count() > MAX_EDITABLE_PARAGRAPH
+        || after.chars().any(|ch| matches!(ch as u32, 0..=8 | 11..=31 | 127)) {
+        return failure("INVALID_TEXT", "선택한 글 범위가 너무 크거나 입력할 수 없는 문자가 있습니다.");
+    }
+    let path: Vec<(usize, usize, usize)> = match args["cellPath"].as_array() {
+        Some(items) => match items.iter().map(|item| {
+            let values = item.as_array().ok_or_else(|| "표 셀 위치가 올바르지 않습니다.".to_owned())?;
+            if values.len() != 3 { return Err("표 셀 위치가 올바르지 않습니다.".to_owned()); }
+            let a = values[0].as_u64().ok_or_else(|| "표 셀 위치가 올바르지 않습니다.".to_owned())? as usize;
+            let b = values[1].as_u64().ok_or_else(|| "표 셀 위치가 올바르지 않습니다.".to_owned())? as usize;
+            let c = values[2].as_u64().ok_or_else(|| "표 셀 위치가 올바르지 않습니다.".to_owned())? as usize;
+            Ok((a, b, c))
+        }).collect::<Result<Vec<_>, String>>() {
+            Ok(path) if path.len() <= 8 => path,
+            Ok(_) => return failure("INVALID_TEXT", "중첩 표 깊이가 너무 큽니다."),
+            Err(error) => return failure("INVALID_TEXT", error),
+        },
+        None => return failure("INVALID_TEXT", "표 셀 위치가 올바르지 않습니다."),
+    };
+    let mut sessions = match sessions().lock() {
+        Ok(sessions) => sessions, Err(_) => return failure("ENGINE_ERROR", "문서 엔진 상태를 복구하지 못했습니다."),
+    };
+    let Some(session) = sessions.get_mut(&id) else {
+        return failure("CLOSED_DOCUMENT", "문서가 닫혔습니다. 다시 열어 주세요.");
+    };
+    if !session.can_edit { return failure("READ_ONLY", session.edit_reason.clone()); }
+    let active = session.active_text_edit.take();
+    let (snapshot, original, dirty_before, char_shape_id) = match active {
+        Some(edit) if edit.section == section && edit.paragraph == paragraph
+            && edit.start == start && edit.cell_path == path && edit.current == before =>
+            (edit.snapshot, edit.original, edit.dirty_before, edit.char_shape_id),
+        Some(edit) => {
+            session.active_text_edit = Some(edit);
+            return failure("STALE_TEXT", "현재 편집 위치가 바뀌었습니다. 글자를 다시 선택해 주세요.");
+        }
+        None => {
+            let current = if path.is_empty() {
+                session.core.get_text_range_native(section, paragraph, start, start + before.chars().count())
+            } else {
+                session.core.get_text_in_cell_by_path(section, paragraph, &path, start, before.chars().count())
+            };
+            match current {
+                Ok(current) if current == before => (session.core.save_snapshot_native(), before.to_owned(),
+                    session.dirty, requested_char_shape_id),
+                Ok(_) => return failure("STALE_TEXT", "쪽이 다시 배치되었습니다. 글자를 다시 선택해 주세요."),
+                Err(error) => return failure("EDIT_ERROR", error),
+            }
+        }
+    };
+    if before == after {
+        session.active_text_edit = Some(ActiveTextEdit { section, paragraph, start, cell_path: path,
+            original, current: before.to_owned(), snapshot, dirty_before, char_shape_id });
+        return json!({"ok": true, "changed": false, "state": editor_state(session)});
+    }
+    let rollback = session.core.save_snapshot_native();
+    let replace = if path.is_empty() {
+        let old: Vec<char> = before.chars().collect();
+        let new: Vec<char> = after.chars().collect();
+        let prefix = old.iter().zip(&new).take_while(|(a, b)| a == b).count();
+        let suffix = old[prefix..].iter().rev().zip(new[prefix..].iter().rev())
+            .take_while(|(a, b)| a == b).count();
+        let inserted: String = new[prefix..new.len() - suffix].iter().collect();
+        let removed = old.len() - prefix - suffix;
+        if removed <= 8 && inserted.chars().count() <= 8
+            && !inserted.chars().any(|ch| matches!(ch, '\r' | '\n' | '\t')) {
+            session.core.replace_body_text_local_native(section, paragraph, start + prefix, removed, &inserted)
+        } else {
+            session.core.replace_text_native(section, paragraph, start, old.len(), after)
+        }
+    } else {
+        session.core.delete_text_in_cell_by_path(section, paragraph, &path, start, before.chars().count())
+            .and_then(|_| if after.is_empty() { Ok("{}".to_owned()) }
+                else { session.core.insert_text_in_cell_by_path(section, paragraph, &path, start, after) })
+    };
+    if let Err(error) = replace {
+        let _ = session.core.restore_snapshot_native(rollback);
+        session.core.discard_snapshot_native(rollback);
+        session.core.discard_snapshot_native(snapshot);
+        invalidate_pages(session);
+        return failure("EDIT_ERROR", error);
+    }
+    let old_chars: Vec<char> = before.chars().collect();
+    let new_chars: Vec<char> = after.chars().collect();
+    let prefix = old_chars.iter().zip(&new_chars).take_while(|(a, b)| a == b).count();
+    let suffix = old_chars[prefix..].iter().rev().zip(new_chars[prefix..].iter().rev())
+        .take_while(|(a, b)| a == b).count();
+    let inserted = new_chars.len().saturating_sub(prefix + suffix);
+    if inserted > 0 {
+        if let Some(char_shape_id) = char_shape_id {
+            let styled_start = start + prefix;
+            let styled_end = styled_start + inserted;
+            let styled = if path.is_empty() {
+                session.core.set_char_shape_id_native(section, paragraph, styled_start, styled_end, char_shape_id)
+            } else {
+                session.core.set_char_shape_id_in_cell_by_path(
+                    section, paragraph, &path, styled_start, styled_end, char_shape_id)
+            };
+            if let Err(error) = styled {
+                let _ = session.core.restore_snapshot_native(rollback);
+                session.core.discard_snapshot_native(rollback);
+                session.core.discard_snapshot_native(snapshot);
+                invalidate_pages(session);
+                return failure("EDIT_ERROR", error);
+            }
+        }
+    }
+    session.core.discard_snapshot_native(rollback);
+    session.active_text_edit = Some(ActiveTextEdit { section, paragraph, start, cell_path: path,
+        original, current: after.to_owned(), snapshot, dirty_before, char_shape_id });
+    session.dirty = true;
+    invalidate_pages(session);
+    json!({"ok": true, "state": editor_state(session)})
+}
+fn finish_text_composition(id: i64) -> Value {
+    let mut sessions = match sessions().lock() {
+        Ok(sessions) => sessions, Err(_) => return failure("ENGINE_ERROR", "문서 엔진 상태를 복구하지 못했습니다."),
+    };
+    let Some(session) = sessions.get_mut(&id) else {
+        return failure("CLOSED_DOCUMENT", "문서가 닫혔습니다. 다시 열어 주세요.");
+    };
+    if let Some(edit) = session.active_text_edit.take() {
+        if edit.current == edit.original {
+            session.core.discard_snapshot_native(edit.snapshot);
+            session.dirty = edit.dirty_before;
+        } else {
+            for previous in session.redo.drain(..) { session.core.discard_snapshot_native(previous); }
+            session.undo.push(edit.snapshot);
+            if session.undo.len() > MAX_HISTORY {
+                let expired = session.undo.remove(0);
+                session.core.discard_snapshot_native(expired);
+            }
+            session.dirty = true;
+        }
+    }
+    json!({"ok": true, "state": editor_state(session)})
+}
 fn history(id: i64, redo: bool) -> Value {
     let mut sessions = match sessions().lock() {
         Ok(sessions) => sessions,
@@ -534,7 +696,8 @@ fn collect_text_runs(node: &RenderNode, output: &mut Vec<Value>) {
                         .map(|context| context.parent_para_index).unwrap_or(paragraph);
                     output.push(json!({"section": section, "paragraph": target_paragraph, "start": start,
                         "text": run.text, "x": node.bbox.x, "y": node.bbox.y,
-                        "width": node.bbox.width, "height": node.bbox.height, "cellPath": cell_path}));
+                        "width": node.bbox.width, "height": node.bbox.height, "cellPath": cell_path,
+                        "charShapeId": run.char_shape_id}));
                 }
             }
         }
@@ -604,6 +767,30 @@ fn render_page(id: i64, index: u32) -> Value {
         }
     }
     reply
+}
+fn cursor_rect(id: i64, section: usize, paragraph: usize, offset: usize, path_json: &str) -> Value {
+    let path: Vec<[usize; 3]> = match serde_json::from_str(path_json) {
+        Ok(path) => path, Err(error) => return failure("INVALID_POSITION", error),
+    };
+    if path.len() > 1 { return failure("UNSUPPORTED_POSITION", "중첩 표의 커서 위치는 아직 지원하지 않습니다."); }
+    let mut sessions = match sessions().lock() {
+        Ok(sessions) => sessions, Err(_) => return failure("ENGINE_ERROR", "문서 엔진 상태를 복구하지 못했습니다."),
+    };
+    let Some(session) = sessions.get_mut(&id) else {
+        return failure("CLOSED_DOCUMENT", "문서가 닫혔습니다. 다시 열어 주세요.");
+    };
+    let rect = match path.first() {
+        Some([control, cell, cell_para]) => session.core.get_cursor_rect_in_cell_native(
+            section, paragraph, *control, *cell, *cell_para, offset),
+        None => session.core.get_cursor_rect_native(section, paragraph, offset),
+    };
+    match rect {
+        Ok(rect) => match serde_json::from_str::<Value>(&rect) {
+            Ok(rect) => json!({"ok": true, "cursor": rect}),
+            Err(error) => failure("CURSOR_ERROR", error),
+        },
+        Err(error) => failure("CURSOR_ERROR", error),
+    }
 }
 fn close_document(id: i64) {
     if let Ok(mut sessions) = sessions().lock() { sessions.remove(&id); }
@@ -682,6 +869,22 @@ mod android {
         reply(env, value)
     }
     #[no_mangle]
+    pub extern "system" fn Java_com_sihoo_hwp_NativeReader_cursorRectNative(
+        mut env: JNIEnv, _reader: JObject, id: jlong, section: jint, paragraph: jint, offset: jint,
+        path_json: JString,
+    ) -> jstring {
+        let value = catch_unwind(AssertUnwindSafe(|| {
+            if section < 0 || paragraph < 0 || offset < 0 {
+                return failure("INVALID_POSITION", "잘못된 커서 위치입니다.");
+            }
+            let path: String = match env.get_string(&path_json) {
+                Ok(value) => value.into(), Err(error) => return failure("JNI_ERROR", error),
+            };
+            cursor_rect(id, section as usize, paragraph as usize, offset as usize, &path)
+        })).unwrap_or_else(|_| failure("ENGINE_ERROR", "커서 위치를 계산하지 못했습니다."));
+        reply(env, value)
+    }
+    #[no_mangle]
     pub extern "system" fn Java_com_sihoo_hwp_NativeReader_editParagraph(
         mut env: JNIEnv, _reader: JObject, id: jlong, section: jint, paragraph: jint,
         before: JString, after: JString,
@@ -724,6 +927,26 @@ mod android {
             };
             edit_text_run(id, &command)
         })).unwrap_or_else(|_| failure("ENGINE_ERROR", "쪽의 글을 수정하는 중 오류가 발생했습니다."));
+        reply(env, value)
+    }
+    #[no_mangle]
+    pub extern "system" fn Java_com_sihoo_hwp_NativeReader_updateTextCompositionNative(
+        mut env: JNIEnv, _reader: JObject, id: jlong, command: JString,
+    ) -> jstring {
+        let value = catch_unwind(AssertUnwindSafe(|| {
+            let command: String = match env.get_string(&command) {
+                Ok(value) => value.into(), Err(error) => return failure("JNI_ERROR", error),
+            };
+            update_text_composition(id, &command)
+        })).unwrap_or_else(|_| failure("ENGINE_ERROR", "글을 입력하는 중 오류가 발생했습니다."));
+        reply(env, value)
+    }
+    #[no_mangle]
+    pub extern "system" fn Java_com_sihoo_hwp_NativeReader_finishTextCompositionNative(
+        env: JNIEnv, _reader: JObject, id: jlong,
+    ) -> jstring {
+        let value = catch_unwind(AssertUnwindSafe(|| finish_text_composition(id)))
+            .unwrap_or_else(|_| failure("ENGINE_ERROR", "글 입력을 마치는 중 오류가 발생했습니다."));
         reply(env, value)
     }
     #[no_mangle]

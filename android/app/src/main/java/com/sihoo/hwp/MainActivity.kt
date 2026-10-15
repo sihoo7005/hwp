@@ -65,7 +65,7 @@ private fun ReaderScreen(reader: ReaderViewModel = viewModel()) {
         { fonts.launch(arrayOf("*/*")) }, reader::close,
         onSave = { save.launch(it) }, onHistory = reader::history,
         onMutate = { paragraph, operation, properties -> reader.mutate(paragraph, operation, properties) },
-        onEditTextRun = reader::editTextRun,
+        onUpdateTextRun = reader::updateTextRun, onFinishTextRun = reader::finishTextRun,
         onInsertPicture = { paragraph -> pendingPictureTarget = paragraph; pictures.launch(arrayOf("image/*")) })
 }
 
@@ -74,7 +74,8 @@ internal fun EditorWorkspace(state: ReaderState, onOpen: () -> Unit, onAddFont: 
     onClose: () -> Unit = {}, onSave: (String) -> Unit = {},
     onHistory: (Boolean) -> Unit = {},
     onMutate: (EditorParagraph, String, JSONObject) -> Unit = { _, _, _ -> },
-    onEditTextRun: (PageTextRun, String) -> Unit = { _, _ -> },
+    onUpdateTextRun: (PageTextRun, String, String) -> Unit = { _, _, _ -> },
+    onFinishTextRun: () -> Unit = {},
     onInsertPicture: (PageTextRun) -> Unit = {}) {
     val ready = state as? ReaderState.Ready
     val document = ready?.document
@@ -190,8 +191,10 @@ internal fun EditorWorkspace(state: ReaderState, onOpen: () -> Unit, onAddFont: 
                             }
                             TextButton(onClick = onAddFont, enabled = !busy && document?.editing?.dirty != true) { Text("글꼴 추가") }
                             VerticalDivider(Modifier.height(24.dp))
-                            TextButton(onClick = { onHistory(false) }, enabled = document?.editing?.canUndo == true && !busy) { Text("↶ 실행 취소") }
-                            TextButton(onClick = { onHistory(true) }, enabled = document?.editing?.canRedo == true && !busy) { Text("↷ 다시 실행") }
+                            TextButton(onClick = { onHistory(false) }, enabled =
+                                (document?.editing?.canUndo == true || selectedTextRun != null) && !busy) { Text("↶ 실행 취소") }
+                            TextButton(onClick = { onHistory(true) }, enabled =
+                                (document?.editing?.canRedo == true || selectedTextRun != null) && !busy) { Text("↷ 다시 실행") }
                             TextButton(onClick = { ready?.let { onSave(saveName(it)) } },
                                 enabled = document?.editing?.let { it.canEdit && it.dirty } == true && !busy) { Text("저장") }
                         }
@@ -267,10 +270,10 @@ internal fun EditorWorkspace(state: ReaderState, onOpen: () -> Unit, onAddFont: 
                                         onSelectTextRun = { run ->
                                             selectedTextRun = run
                                             selectedParagraph = EditorParagraph(run.section, run.paragraph, run.text, true)
-                                        }, onEditTextRun = { run, text ->
-                                            onEditTextRun(run, text)
-                                            selectedTextRun = null
-                                            selectedParagraph = null
+                                        }, onUpdateTextRun = { run, before, after ->
+                                            onUpdateTextRun(run, before, after)
+                                        }, onFinishTextRun = {
+                                            onFinishTextRun()
                                         })
                                 }
                             }

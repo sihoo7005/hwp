@@ -16,9 +16,10 @@ data class EditorParagraph(val section: Int, val paragraph: Int, val text: Strin
 data class EditorObject(val section: Int, val paragraph: Int, val controlIndex: Int, val kind: String)
 data class PageTextRun(val section: Int, val paragraph: Int, val start: Int, val text: String,
     val x: Float, val y: Float, val width: Float, val height: Float,
-    val cellPath: List<Triple<Int, Int, Int>>)
+    val cellPath: List<Triple<Int, Int, Int>>, val charShapeId: Int? = null)
 data class PageHit(val section: Int, val paragraph: Int, val offset: Int,
     val cellPath: List<Triple<Int, Int, Int>>)
+data class NativeCursorRect(val page: Int, val x: Float, val y: Float, val height: Float)
 data class EditorState(
     val canEdit: Boolean,
     val reason: String,
@@ -41,6 +42,9 @@ object NativeReader {
     private external fun historyNative(id: Long, redo: Boolean): String
     private external fun mutateNative(id: Long, command: String): String
     private external fun editTextRunNative(id: Long, command: String): String
+    private external fun updateTextCompositionNative(id: Long, command: String): String
+    private external fun finishTextCompositionNative(id: Long): String
+    private external fun cursorRectNative(id: Long, section: Int, paragraph: Int, offset: Int, cellPath: String): String
     private external fun insertPictureNative(id: Long, section: Int, paragraph: Int, offset: Int,
         data: ByteArray, extension: String, width: Int, height: Int): String
     private external fun exportDocument(id: Long): ByteArray
@@ -85,6 +89,25 @@ object NativeReader {
         val value = result(editTextRunNative(id, command.toString()))
         return editorState(value.getJSONObject("state"))
     }
+    fun updateTextComposition(id: Long, run: PageTextRun, before: String, after: String): EditorState {
+        val path = JSONArray().apply { run.cellPath.forEach { put(JSONArray().put(it.first).put(it.second).put(it.third)) } }
+        val command = JSONObject().put("section", run.section).put("paragraph", run.paragraph)
+            .put("start", run.start).put("before", before).put("after", after).put("cellPath", path)
+            .put("charShapeId", run.charShapeId)
+        val value = result(updateTextCompositionNative(id, command.toString()))
+        return editorState(value.getJSONObject("state"))
+    }
+    fun finishTextComposition(id: Long): EditorState {
+        val value = result(finishTextCompositionNative(id))
+        return editorState(value.getJSONObject("state"))
+    }
+    fun cursorRect(id: Long, run: PageTextRun, offset: Int): NativeCursorRect {
+        val path = JSONArray().apply { run.cellPath.forEach { put(JSONArray().put(it.first).put(it.second).put(it.third)) } }
+        val cursor = result(cursorRectNative(id, run.section, run.paragraph, run.start + offset, path.toString()))
+            .getJSONObject("cursor")
+        return NativeCursorRect(cursor.getInt("pageIndex"), cursor.getDouble("x").toFloat(),
+            cursor.getDouble("y").toFloat(), cursor.getDouble("height").toFloat())
+    }
     fun insertPicture(id: Long, run: PageTextRun, data: ByteArray,
         extension: String, width: Int, height: Int): EditorState {
         val offset = run.start + run.text.codePointCount(0, run.text.length)
@@ -102,7 +125,7 @@ object NativeReader {
                 item.getDouble("height").toFloat(), List(path.length()) { i ->
                     val entry = path.getJSONArray(i)
                     Triple(entry.getInt(0), entry.getInt(1), entry.getInt(2))
-                })
+                }, item.optInt("charShapeId", -1).takeIf { it >= 0 })
         }
         return RenderedPage(File(value.getString("svgPath")), File(value.getString("layoutPath")), runs, value.getString("text"),
             value.getJSONArray("warnings").strings())

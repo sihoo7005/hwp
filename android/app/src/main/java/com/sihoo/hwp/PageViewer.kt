@@ -15,6 +15,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.focus.FocusRequester
@@ -52,11 +54,13 @@ private data class LoadedPage(val content: RenderedPage, val drawing: CanvasPage
 @Composable
 fun PageViewer(document: ReadDocument, index: Int, textMode: Boolean,
     modifier: Modifier = Modifier, editable: Boolean = false,
-    onSelectTextRun: (PageTextRun) -> Unit = {}, onEditTextRun: (PageTextRun, String) -> Unit = { _, _ -> }) {
-    var attempt by remember(document.id, index, document.revision) { mutableIntStateOf(0) }
-    val page by produceState<Result<LoadedPage>?>(null, document.id, index, attempt, document.revision) {
-        value = null
-        value = try {
+    onSelectTextRun: (PageTextRun) -> Unit = {},
+    onUpdateTextRun: (PageTextRun, String, String) -> Unit = { _, _, _ -> },
+    onFinishTextRun: () -> Unit = {}) {
+    var attempt by remember(document.id, index) { mutableIntStateOf(0) }
+    var page by remember(document.id, index) { mutableStateOf<Result<LoadedPage>?>(null) }
+    LaunchedEffect(document.id, index, attempt, document.revision) {
+        page = try {
             Result.success(withContext(Dispatchers.IO) {
                 val content = NativeReader.page(document.id, index)
                 LoadedPage(content, loadCanvasPage(content.file))
@@ -92,6 +96,21 @@ fun PageViewer(document: ReadDocument, index: Int, textMode: Boolean,
                     BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(drawing.width / drawing.height)
                         .semantics { contentDescription = "${index + 1}쪽 원본 서식" }) {
                         val scale = maxWidth.value / drawing.width
+                        val activeRun = active
+                        val fieldValue = value
+                        val cursor by produceState<NativeCursorRect?>(null, document.id, index, activeRun,
+                            fieldValue.selection.end, document.revision) {
+                            value = activeRun?.let { run ->
+                                runCatching {
+                                    withContext(Dispatchers.IO) {
+                                        NativeReader.cursorRect(document.id, run,
+                                            fieldValue.selection.end.coerceIn(0, fieldValue.text.length).let {
+                                                fieldValue.text.codePointCount(0, it)
+                                            })
+                                    }
+                                }.getOrNull()
+                            }
+                        }
                         Canvas(Modifier.fillMaxSize()) {
                             drawIntoCanvas { canvas ->
                                 val native = canvas.nativeCanvas
@@ -100,6 +119,13 @@ fun PageViewer(document: ReadDocument, index: Int, textMode: Boolean,
                                     native.scale(size.width / drawing.width, size.width / drawing.width)
                                     native.drawPicture(drawing.picture)
                                 } finally { native.restore() }
+                            }
+                            cursor?.takeIf { it.page == index }?.let { caret ->
+                                val x = caret.x * size.width / drawing.width
+                                val y = caret.y * size.width / drawing.width
+                                drawLine(Color(0xFF2457C5), Offset(x, y),
+                                    Offset(x, y + caret.height * size.width / drawing.width),
+                                    strokeWidth = with(density) { 1.5.dp.toPx() })
                             }
                         }
                         if (editable) loaded.content.textRuns.forEach { run ->
@@ -110,9 +136,8 @@ fun PageViewer(document: ReadDocument, index: Int, textMode: Boolean,
                             Box(Modifier.offset(x, y).size(width, height).pointerInput(document.id, index, run, scale) {
                                 detectTapGestures { point ->
                                     active?.let { current ->
-                                        onEditTextRun(current, value.text)
+                                        onFinishTextRun()
                                         active = null
-                                        return@detectTapGestures
                                     }
                                     val docX = run.x + with(density) { point.x.toDp().value } / scale
                                     val docY = run.y + with(density) { point.y.toDp().value } / scale
@@ -139,17 +164,22 @@ fun PageViewer(document: ReadDocument, index: Int, textMode: Boolean,
                             val fieldWidth = minOf(maxWidth - x, maxOf(runWidth, 80.dp)).coerceAtLeast(48.dp)
                             val fontSize = with(density) { ((run.height * scale).dp.toSp().value * .78f).sp }
                             fun finish() {
-                                active?.takeIf { value.text != it.text }?.let { onEditTextRun(it, value.text) }
+                                onFinishTextRun()
                                 active = null
                             }
                             Box(Modifier.offset(x, y).width(fieldWidth).height(maxOf((run.height * scale * 1.35f).dp, 24.dp))
-                                .zIndex(2f).background(Color.White)) {
-                                BasicTextField(value, { value = it }, Modifier.fillMaxSize().focusRequester(focusRequester)
+                                .zIndex(2f)) {
+                                BasicTextField(value, { next ->
+                                    val before = value.text
+                                    value = next
+                                    onUpdateTextRun(run, before, next.text)
+                                }, Modifier.fillMaxSize().focusRequester(focusRequester)
                                     .onFocusChanged {
                                         if (it.isFocused) receivedFocus = true
                                         else if (receivedFocus) finish()
                                     }, singleLine = true,
-                                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = fontSize, color = Color.Black),
+                                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = fontSize, color = Color.Transparent),
+                                    cursorBrush = SolidColor(Color.Transparent),
                                     keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
                                     keyboardActions = KeyboardActions(onDone = { finish() }))
                             }
