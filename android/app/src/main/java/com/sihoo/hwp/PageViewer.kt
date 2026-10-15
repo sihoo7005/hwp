@@ -100,7 +100,7 @@ fun PageViewer(document: ReadDocument, index: Int, textMode: Boolean,
                         val fieldValue = value
                         val cursor by produceState<NativeCursorRect?>(null, document.id, index, activeRun,
                             fieldValue.selection.end, document.revision) {
-                            value = activeRun?.let { run ->
+                            this.value = activeRun?.let { run ->
                                 runCatching {
                                     withContext(Dispatchers.IO) {
                                         NativeReader.cursorRect(document.id, run,
