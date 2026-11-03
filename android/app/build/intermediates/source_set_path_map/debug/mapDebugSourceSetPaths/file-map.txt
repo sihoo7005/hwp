@@ -1,0 +1,44 @@
+com.sihoo.hwp.app-lifecycle-runtime-compose-release-0 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/001b95fd35673b193b380be4614a0c50/transformed/lifecycle-runtime-compose-release/res
+com.sihoo.hwp.app-ui-graphics-release-1 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/0123d3e2d4a46f767e6aaed60c854853/transformed/ui-graphics-release/res
+com.sihoo.hwp.app-runtime-saveable-release-2 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/09cf849f3fd55acf332035a2adea3b3e/transformed/runtime-saveable-release/res
+com.sihoo.hwp.app-graphics-path-1.0.1-3 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/09f1f9035e2657e25ac22daff0a70ba0/transformed/graphics-path-1.0.1/res
+com.sihoo.hwp.app-activity-1.10.1-4 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/0b445dfc91ed65c3dd83dd5991441b49/transformed/activity-1.10.1/res
+com.sihoo.hwp.app-runtime-release-5 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/0cc5fdfec87456cf68e870868224497e/transformed/runtime-release/res
+com.sihoo.hwp.app-lifecycle-viewmodel-ktx-2.9.0-6 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/1d878dca626fb4335c8a907e0d5e05ba/transformed/lifecycle-viewmodel-ktx-2.9.0/res
+com.sihoo.hwp.app-lifecycle-viewmodel-compose-release-7 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/1ec030be6488a11b792bfd9f742094d0/transformed/lifecycle-viewmodel-compose-release/res
+com.sihoo.hwp.app-material-icons-core-release-8 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/22fd7219a29c520572e32394bd4b4549/transformed/material-icons-core-release/res
+com.sihoo.hwp.app-core-1.13.1-9 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/293f2614e1ce5df95eb5ea6d56e369af/transformed/core-1.13.1/res
+com.sihoo.hwp.app-ui-test-manifest-1.8.0-10 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/3fc2de2a633abe2d49f4d37363df380c/transformed/ui-test-manifest-1.8.0/res
+com.sihoo.hwp.app-startup-runtime-1.1.1-11 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/4cce268ff8ed729d5be3c3ed8c842557/transformed/startup-runtime-1.1.1/res
+com.sihoo.hwp.app-lifecycle-process-2.9.0-12 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/4df1a45b590d8b040db1bd1843fb5af7/transformed/lifecycle-process-2.9.0/res
+com.sihoo.hwp.app-savedstate-release-13 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/543cf50ef8374f3961c8c6eb401c15aa/transformed/savedstate-release/res
+com.sihoo.hwp.app-profileinstaller-1.4.0-14 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/568e59b55ce074c98577878a7b809412/transformed/profileinstaller-1.4.0/res
+com.sihoo.hwp.app-foundation-release-15 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/5ac68f06bfa0e3a7391eb3851b9f5c84/transformed/foundation-release/res
+com.sihoo.hwp.app-material3-release-16 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/5d8696c473a31245dea7fab319648cb3/transformed/material3-release/res
+com.sihoo.hwp.app-animation-core-release-17 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/6f5c25d59769dee80c98496237b9b5b1/transformed/animation-core-release/res
+com.sihoo.hwp.app-savedstate-ktx-1.3.0-18 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/770a6135265ed6ee48cb10ce132a07a6/transformed/savedstate-ktx-1.3.0/res
+com.sihoo.hwp.app-ui-text-release-19 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/791dfa2eb84106b2b861ec027c5e9832/transformed/ui-text-release/res
+com.sihoo.hwp.app-foundation-layout-release-20 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/7ba4245da4b5c0485b5b9e9ae975ef94/transformed/foundation-layout-release/res
+com.sihoo.hwp.app-ui-unit-release-21 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/839891b8f0332437c507fd32d5c9c88c/transformed/ui-unit-release/res
+com.sihoo.hwp.app-core-viewtree-1.0.0-22 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/948f22668207f7e328f5ad11df18df77/transformed/core-viewtree-1.0.0/res
+com.sihoo.hwp.app-ui-release-23 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/9a5ab379a7f5e3bd9b4e368155c052e7/transformed/ui-release/res
+com.sihoo.hwp.app-emoji2-1.4.0-24 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/9ae89abd18087f1f977c949cf342b19d/transformed/emoji2-1.4.0/res
+com.sihoo.hwp.app-core-runtime-2.2.0-25 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/af9a47f0240069f6c2b7da7e19a04a39/transformed/core-runtime-2.2.0/res
+com.sihoo.hwp.app-lifecycle-livedata-core-2.9.0-26 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/b98355803eb77d587fc7e27c8eaf3106/transformed/lifecycle-livedata-core-2.9.0/res
+com.sihoo.hwp.app-androidsvg-aar-1.4-27 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/c4ee27f89c33fcb403a88b824600cda3/transformed/androidsvg-aar-1.4/res
+com.sihoo.hwp.app-lifecycle-viewmodel-release-28 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/d1b3ff403a5f70e6c5e51bc6b628f4cb/transformed/lifecycle-viewmodel-release/res
+com.sihoo.hwp.app-lifecycle-runtime-release-29 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/d7893d643ba54f41d14d6eb2410aede8/transformed/lifecycle-runtime-release/res
+com.sihoo.hwp.app-activity-ktx-1.10.1-30 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/df6a0461bc9d2f6c84957a96d561b16f/transformed/activity-ktx-1.10.1/res
+com.sihoo.hwp.app-customview-poolingcontainer-1.0.0-31 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/e0dc0c2abe2a3c6fda8a5ca2a91353ab/transformed/customview-poolingcontainer-1.0.0/res
+com.sihoo.hwp.app-activity-compose-1.10.1-32 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/e632999952cf897c48f6e6cabd54b36e/transformed/activity-compose-1.10.1/res
+com.sihoo.hwp.app-annotation-experimental-1.4.1-33 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/ea4fd4541bebbf200703e71dcc2f2fec/transformed/annotation-experimental-1.4.1/res
+com.sihoo.hwp.app-core-ktx-1.13.1-34 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/ee8728470b26b6d2069bb72fe3acb3fe/transformed/core-ktx-1.13.1/res
+com.sihoo.hwp.app-lifecycle-viewmodel-savedstate-release-35 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/eff19f656adcc5da02f07190f0e30e8c/transformed/lifecycle-viewmodel-savedstate-release/res
+com.sihoo.hwp.app-ui-util-release-36 /data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/f78f7ac8c79f939b82d544ad379671bb/transformed/ui-util-release/res
+com.sihoo.hwp.app-pngs-37 /storage/emulated/0/Documents/android hwp/android/app/build/generated/res/pngs/debug
+com.sihoo.hwp.app-resValues-38 /storage/emulated/0/Documents/android hwp/android/app/build/generated/res/resValues/debug
+com.sihoo.hwp.app-packageDebugResources-39 /storage/emulated/0/Documents/android hwp/android/app/build/intermediates/incremental/debug/packageDebugResources/merged.dir
+com.sihoo.hwp.app-packageDebugResources-40 /storage/emulated/0/Documents/android hwp/android/app/build/intermediates/incremental/debug/packageDebugResources/stripped.dir
+com.sihoo.hwp.app-debug-41 /storage/emulated/0/Documents/android hwp/android/app/build/intermediates/merged_res/debug/mergeDebugResources
+com.sihoo.hwp.app-debug-42 /storage/emulated/0/Documents/android hwp/android/app/src/debug/res
+com.sihoo.hwp.app-main-43 /storage/emulated/0/Documents/android hwp/android/app/src/main/res

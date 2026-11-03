@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.sihoo.hwp.app-mergeDebugResources-39:/values-v30/values-v30.xml",
+            "map": [
+                {
+                    "source": "/data/data/com.termux/files/usr/tmp/mobile-hwp-build/gradle-home/caches/8.11.1/transforms/5d8696c473a31245dea7fab319648cb3/transformed/material3-release/res/values-v30/values-v30.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "72",
+                        "endOffsets": "123"
+                    }
+                }
+            ]
+        }
+    ]
+}
