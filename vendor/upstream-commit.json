@@ -1,0 +1,95 @@
+{
+  "sha": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "node_id": "C_kwDORyECHNoAKDFhNzY1NzBlODMzOTE3ZDE1ODE3NDE1YTUzYzA5YWQ2MWFiMzIwM2Y",
+  "commit": {
+    "author": {
+      "name": "edward kim",
+      "email": "tangokorea@gmail.com",
+      "date": "2026-10-06T07:15:59Z"
+    },
+    "committer": {
+      "name": "GitHub",
+      "email": "noreply@github.com",
+      "date": "2026-10-06T07:15:59Z"
+    },
+    "message": "v0.8.7 릴리즈: devel을 main에 병합 (#7607)\n\nv0.8.7 릴리즈 후보 devel을 main에 승격합니다.\n\nSelf-review 승인 및 main 병합에 대한 작업지시자의 명시적 지시에 따라 처리합니다. GitHub 작성자 자기 승인 제한으로 reviewer 1건 요구만 메인테이너 권한으로 처리하며 branch protection 설정은 변경하지 않습니다.\n\nExact head d9749c5a15b95206455953494f6fc871c115cef1: check rollup 34 SUCCESS / 4 SKIPPED / 실패 및 진행 중 0, Workflow promotion 실제 verdict 16/16 / 오류 0 / waiver 0. Linux·macOS·Windows 5개 CLI 및 verify-only package 경로를 확인했습니다.\n\nOracle의 29 mismatch 및 같은 공개 문서 2개 비교의 dump-pages timeout은 관측 한계로 남습니다. 정식 tag/package 게시와 브라우저 스토어 제출은 별도 후속 단계입니다.",
+    "tree": {
+      "sha": "88b08d2bb3e874eed54f9f4593d1d2788cf0ab78",
+      "url": "https://api.github.com/repos/edwardkim/rhwp/git/trees/88b08d2bb3e874eed54f9f4593d1d2788cf0ab78"
+    },
+    "url": "https://api.github.com/repos/edwardkim/rhwp/git/commits/1a76570e833917d15817415a53c09ad61ab3203f",
+    "comment_count": 0,
+    "verification": {
+      "verified": true,
+      "reason": "valid",
+      "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsFcBAABCAAQBQJqxKAvCRC1aQ7uu5UhlAAAVtEQAJfWQ6W49S8CW1wfrt7hvk16\nhhi4XAcuIphp9R0+4JgKJKYCYeGVFw/ON5lh56bwFoCtAEQdkdYD6kc4ikrHiyvG\nbqcA0Ohjyv2vdQ1IkfReAciS++y8c7+Aqk9eAml5GPI/ZZ2iJKIhH2pH0cXhUNIG\n5xxZjqc+5FSlLQx7hm7f0dnpaBsFw04DakQ4TYGWBp5ta1xkwWIX4wPyEU2OTNJw\n7VrA6p3zdGHSQqCJd4sHDo/MXNCntW+elTd+UWcNA4IK76NZRyWBzkDX9hCEY2Rq\nYpt7NsTj1ndek0q4RUQ3cGVtrE8RUWRMdd0up+E2+qu3AfJ8ewXimh/NvAG75n59\niDNDN439EUqyCsZlGTQ8xMu4CyZhor2LZAIP1H/XagAxYCYbai3PdPFC+qxyfppD\n0+gHEau+V6LoJY+DNJ54D+j+u5x+xE3CBWjDbkFq0yMsD9iXysAJdeiBIiNN4VSp\n93KliSBb9tqRJ1TbpMAm63kwWmEIokPlZlz375AN7O7XihBr/6zaGw5J2c9t/pDt\nFC45ODVn8ttKcwjhLmVaryiP6u2O9AggoymN6fl/kLmwUMDs4NkJYRJd3Ob2+Grg\nHzvocsYW7xFZ9tskv/l6BhpwJFjpAiXMxk5Qs7Aby7PoB5jlpPx4hxc7pN1fBS4H\nUfoIW2iunhYZuO3zdDto\n=OY6j\n-----END PGP SIGNATURE-----\n",
+      "payload": "tree 88b08d2bb3e874eed54f9f4593d1d2788cf0ab78\nparent 680111ec7bea2fe11110de18c3676ba5a1cf7847\nparent d9749c5a15b95206455953494f6fc871c115cef1\nauthor edward kim <tangokorea@gmail.com> 1791270959 +0900\ncommitter GitHub <noreply@github.com> 1791270959 +0900\n\nv0.8.7 릴리즈: devel을 main에 병합 (#7607)\n\nv0.8.7 릴리즈 후보 devel을 main에 승격합니다.\n\nSelf-review 승인 및 main 병합에 대한 작업지시자의 명시적 지시에 따라 처리합니다. GitHub 작성자 자기 승인 제한으로 reviewer 1건 요구만 메인테이너 권한으로 처리하며 branch protection 설정은 변경하지 않습니다.\n\nExact head d9749c5a15b95206455953494f6fc871c115cef1: check rollup 34 SUCCESS / 4 SKIPPED / 실패 및 진행 중 0, Workflow promotion 실제 verdict 16/16 / 오류 0 / waiver 0. Linux·macOS·Windows 5개 CLI 및 verify-only package 경로를 확인했습니다.\n\nOracle의 29 mismatch 및 같은 공개 문서 2개 비교의 dump-pages timeout은 관측 한계로 남습니다. 정식 tag/package 게시와 브라우저 스토어 제출은 별도 후속 단계입니다.",
+      "verified_at": "2026-10-06T07:16:00Z"
+    }
+  },
+  "url": "https://api.github.com/repos/edwardkim/rhwp/commits/1a76570e833917d15817415a53c09ad61ab3203f",
+  "html_url": "https://github.com/edwardkim/rhwp/commit/1a76570e833917d15817415a53c09ad61ab3203f",
+  "comments_url": "https://api.github.com/repos/edwardkim/rhwp/commits/1a76570e833917d15817415a53c09ad61ab3203f/comments",
+  "author": {
+    "login": "edwardkim",
+    "id": 3311384,
+    "node_id": "MDQ6VXNlcjMzMTEzODQ=",
+    "avatar_url": "https://avatars.githubusercontent.com/u/3311384?v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/edwardkim",
+    "html_url": "https://github.com/edwardkim",
+    "followers_url": "https://api.github.com/users/edwardkim/followers",
+    "following_url": "https://api.github.com/users/edwardkim/following{/other_user}",
+    "gists_url": "https://api.github.com/users/edwardkim/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/edwardkim/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/edwardkim/subscriptions",
+    "organizations_url": "https://api.github.com/users/edwardkim/orgs",
+    "repos_url": "https://api.github.com/users/edwardkim/repos",
+    "events_url": "https://api.github.com/users/edwardkim/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/edwardkim/received_events",
+    "type": "User",
+    "user_view_type": "public",
+    "site_admin": false
+  },
+  "committer": {
+    "login": "web-flow",
+    "id": 19864447,
+    "node_id": "MDQ6VXNlcjE5ODY0NDQ3",
+    "avatar_url": "https://avatars.githubusercontent.com/u/19864447?v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/web-flow",
+    "html_url": "https://github.com/web-flow",
+    "followers_url": "https://api.github.com/users/web-flow/followers",
+    "following_url": "https://api.github.com/users/web-flow/following{/other_user}",
+    "gists_url": "https://api.github.com/users/web-flow/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/web-flow/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/web-flow/subscriptions",
+    "organizations_url": "https://api.github.com/users/web-flow/orgs",
+    "repos_url": "https://api.github.com/users/web-flow/repos",
+    "events_url": "https://api.github.com/users/web-flow/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/web-flow/received_events",
+    "type": "User",
+    "user_view_type": "public",
+    "site_admin": false
+  },
+  "parents": [
+    {
+      "sha": "680111ec7bea2fe11110de18c3676ba5a1cf7847",
+      "url": "https://api.github.com/repos/edwardkim/rhwp/commits/680111ec7bea2fe11110de18c3676ba5a1cf7847",
+      "html_url": "https://github.com/edwardkim/rhwp/commit/680111ec7bea2fe11110de18c3676ba5a1cf7847"
+    },
+    {
+      "sha": "d9749c5a15b95206455953494f6fc871c115cef1",
+      "url": "https://api.github.com/repos/edwardkim/rhwp/commits/d9749c5a15b95206455953494f6fc871c115cef1",
+      "html_url": "https://github.com/edwardkim/rhwp/commit/d9749c5a15b95206455953494f6fc871c115cef1"
+    }
+  ],
+  "stats": {
+    "total": 0,
+    "additions": 0,
+    "deletions": 0
+  },
+  "files": [
+
+  ]
+}

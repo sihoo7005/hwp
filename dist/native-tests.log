@@ -1,0 +1,11 @@
+    Finished `release` profile [optimized] target(s) in 1.30s
+     Running unittests src/lib.rs (/data/data/com.termux/files/usr/tmp/mobile-hwp-build/native-target/aarch64-linux-android/release/deps/hwp_reader-f0954bf285391cf7)
+
+running 4 tests
+test tests::renders_real_documents_and_preserves_page_identity ... ok
+test tests::rejects_invalid_input_and_stale_sessions ... ok
+test canvas_svg::tests::preserves_vector_geometry_clips_and_embedded_svg_images ... ok
+test tests::edits_all_formats_and_exports_verified_copies ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+

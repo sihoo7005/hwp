@@ -1,0 +1,9 @@
+PASS: APK embeds the newly built native engine.
+PASS: All 13 Kotlin JNI declarations have exported native methods.
+PASS: Android bytecode, Korean fonts, and native ARM64 engine are included.
+PASS: No HTML, JavaScript, or WASM assets are packaged.
+PASS: Native engine ELF LOAD alignment: [16384, 16384, 16384].
+APK bytes: 40800863
+APK SHA-256: cef7f36abd1ba30c66620a7343315eb5d15797ef0e5623f954c18a870928c097
+Native engine SHA-256: 64bb08aa5bb2adec9164fcb0e4548063cd12fcb6d18fe2ce40da3dc93515ae1e
+UI installation/device instrumentation tests were not run.

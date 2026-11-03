@@ -1,0 +1,8 @@
+PASS JNI open/render: hwp3-tab.hwp
+PASS JNI open/render: hwp5-korean.hwp
+PASS JNI open/render: hwpx-table.hwpx
+PASS JNI create/edit/format/undo/redo/export/reopen: hwp
+PASS JNI create/edit/format/undo/redo/export/reopen: hwpx
+PASS JNI nonzero-offset cell edit/paragraph format/table row+column/export: hwp
+PASS JNI nonzero-offset cell edit/paragraph format/table row+column/export: hwpx
+PASS JNI closed-session rejection
